@@ -569,10 +569,14 @@ async function readSession(name) {
 // the Raw tab still shows exactly what crossed the wire.
 
 function textOfCodexContent(content) {
+  if (content == null) return ''
   if (typeof content === 'string') return content
-  if (!Array.isArray(content)) return ''
+  if (!Array.isArray(content)) {
+    if (typeof content === 'object') return content.text ?? JSON.stringify(content, null, 2)
+    return String(content)
+  }
   return content
-    .map((c) => c.text ?? c.input_text ?? c.output_text ?? '')
+    .map((c) => (typeof c === 'string' ? c : (c.text ?? c.input_text ?? c.output_text ?? '')))
     .filter(Boolean)
     .join('\n')
 }
@@ -608,14 +612,23 @@ function viewOf(rec) {
       continue
     }
     if (item?.type === 'function_call' || item?.type === 'custom_tool_call') {
+      // A custom tool carries `input`; a function call carries `arguments`.
+      const args = item.input ?? item.arguments ?? ''
       messages.push({
         role: 'assistant',
-        content: `[tool_call ${item.name}]\n${item.arguments ?? ''}`,
+        name: item.name,
+        call_id: item.call_id ?? item.id,
+        content: typeof args === 'string' ? args : JSON.stringify(args, null, 2),
       })
       continue
     }
     if (item?.type === 'function_call_output' || item?.type === 'custom_tool_call_output') {
-      messages.push({ role: 'tool', content: String(item.output ?? '') })
+      // The output is a list of content blocks, not a string.
+      messages.push({
+        role: 'tool',
+        call_id: item.call_id ?? item.id,
+        content: textOfCodexContent(item.output),
+      })
       continue
     }
     if (item?.type === 'reasoning') {
@@ -625,6 +638,59 @@ function viewOf(rec) {
     messages.push({ role: item?.role ?? item?.type ?? 'unknown', content: text })
   }
   return { system, tools, messages }
+}
+
+// The tool calls of a conversation, paired with their results. This is the
+// view a reader asks for first: what did the agent actually run?
+function callsOf(rec, view) {
+  const out = []
+  if ((rec.provider ?? 'anthropic') === 'anthropic') {
+    const results = new Map()
+    for (const m of view.messages) {
+      for (const c of Array.isArray(m.content) ? m.content : []) {
+        if (c?.type === 'tool_result') results.set(c.tool_use_id, c)
+      }
+    }
+    view.messages.forEach((m, i) => {
+      for (const c of Array.isArray(m.content) ? m.content : []) {
+        if (c?.type !== 'tool_use') continue
+        const r = results.get(c.id)
+        out.push({
+          index: out.length,
+          message: i,
+          name: c.name,
+          input: JSON.stringify(c.input ?? {}, null, 2),
+          output: r ? blockTextOf(r.content) : null,
+          is_error: !!r?.is_error,
+        })
+      }
+    })
+    return out
+  }
+  const results = new Map()
+  view.messages.forEach((m) => {
+    if (m.role === 'tool' && m.call_id) results.set(m.call_id, m)
+  })
+  view.messages.forEach((m, i) => {
+    if (m.role !== 'assistant' || !m.name) return
+    const r = m.call_id ? results.get(m.call_id) : null
+    out.push({
+      index: out.length,
+      message: i,
+      name: m.name,
+      input: typeof m.content === 'string' ? m.content : '',
+      output: r ? (typeof r.content === 'string' ? r.content : '') : null,
+      is_error: /Script (failed|error)|error:/i.test(String(r?.content ?? '')),
+    })
+  })
+  return out
+}
+
+// Minimal text extraction for Anthropic tool results, used by callsOf.
+function blockTextOf(content) {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return JSON.stringify(content ?? null, null, 2)
+  return content.map((c) => c?.text ?? JSON.stringify(c)).join('\n')
 }
 
 function kindOf(rec) {
@@ -736,9 +802,14 @@ async function viewer(req, res, url) {
     const kind = kindOf(rec)
     const prev = earlier.at(-1) || null
     const comparable = earlier.filter((r) => kindOf(r) === kind).at(-1) || null
-    const withView = (r) => r && { ...r, kind: kindOf(r), view: viewOf(r) }
+    const withView = (r) => {
+      if (!r) return null
+      const v = viewOf(r)
+      return { ...r, kind: kindOf(r), view: v, calls: callsOf(r, v) }
+    }
+    const view = viewOf(rec)
     return json(res, {
-      call: { ...rec, kind, view: viewOf(rec) },
+      call: { ...rec, kind, view, calls: callsOf(rec, view) },
       prev: withView(prev),
       comparable: withView(comparable),
     })

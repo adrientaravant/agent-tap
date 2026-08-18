@@ -17,7 +17,24 @@ export type Block = {
   cache_control?: { type: string }
 }
 
-export type Message = { role: string; content: string | Block[]; cache_control?: { type: string } }
+export type Message = {
+  role: string
+  content: string | Block[]
+  name?: string
+  call_id?: string
+  cache_control?: { type: string }
+}
+
+// One tool call paired with its result, computed by the server for both
+// clients: Anthropic tool_use/tool_result, Codex custom_tool_call/output.
+export type ToolCall = {
+  index: number
+  message: number
+  name: string
+  input: string
+  output: string | null
+  is_error: boolean
+}
 
 export type Tool = {
   name: string
@@ -42,6 +59,7 @@ export type WireRecord = {
   // Normalised by the server so both clients render the same way. The raw
   // request stays in `request` and is what the Raw tab shows.
   view?: CallView
+  calls?: ToolCall[]
   seq: number
   ts: string
   url: string

@@ -57,6 +57,8 @@ export function CallDetail({ call, prev }: { call: WireRecord; prev: WireRecord 
   const prevMessageCount = prevView?.messages.length ?? 0
   const prevTools = useMemo(() => new Set((prevView?.tools ?? []).map((t) => t.name)), [prevView])
 
+  const calls = call.calls ?? []
+  const [callIdx, setCallIdx] = useState<string | null>(null)
   const [tool, setTool] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [sysIdx, setSysIdx] = useState<string | null>(null)
@@ -64,6 +66,7 @@ export function CallDetail({ call, prev }: { call: WireRecord; prev: WireRecord 
     setTool(tools[0]?.name ?? null)
     setMsg(messages.length ? String(messages.length - 1) : null)
     setSysIdx(sys.length ? "0" : null)
+    setCallIdx(calls.length ? "0" : null)
     // A new call resets the outline selection.
   }, [call.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -82,7 +85,7 @@ export function CallDetail({ call, prev }: { call: WireRecord; prev: WireRecord 
     const text = blockText(m.content)
     return {
       id: String(i),
-      label: `[${i}] ${m.role}`,
+      label: m.name ? `[${i}] ${m.role} → ${m.name}` : `[${i}] ${m.role}`,
       hint: text.slice(0, 90).replace(/\s+/g, " "),
       tags: [
         ...(m.cache_control ? ["cache breakpoint"] : []),
@@ -108,6 +111,7 @@ export function CallDetail({ call, prev }: { call: WireRecord; prev: WireRecord 
   const selectedTool = tools.find((t) => t.name === tool)
   const selectedMsg = msg != null ? messages[Number(msg)] : undefined
   const selectedSys = sysIdx != null ? sys[Number(sysIdx)] : undefined
+  const selectedCall = callIdx != null ? calls[Number(callIdx)] : undefined
 
   return (
     // h-full, not flex-1: the resizable panel wrapper is a block element, so a
@@ -145,6 +149,7 @@ export function CallDetail({ call, prev }: { call: WireRecord; prev: WireRecord 
           <TabsTrigger value="system">System ({sys.length})</TabsTrigger>
           <TabsTrigger value="tools">Tools ({tools.length})</TabsTrigger>
           <TabsTrigger value="messages">Messages ({messages.length})</TabsTrigger>
+          <TabsTrigger value="calls">Tool calls ({calls.length})</TabsTrigger>
           <TabsTrigger value="params">Params</TabsTrigger>
           <TabsTrigger value="reply">Reply</TabsTrigger>
           <TabsTrigger value="diff">Diff</TabsTrigger>
@@ -321,6 +326,53 @@ export function CallDetail({ call, prev }: { call: WireRecord; prev: WireRecord 
               <Empty>
                 <EmptyHeader>
                   <EmptyTitle>No messages</EmptyTitle>
+                </EmptyHeader>
+              </Empty>
+            )}
+          </OutlinePane>
+        </TabsContent>
+
+        <TabsContent value="calls" className="mt-3 flex min-h-0 flex-1 flex-col">
+          <PaneHeader derived>
+            Each tool the agent ran on this turn, paired with the result it got back.
+          </PaneHeader>
+          <OutlinePane
+            items={calls.map((c) => ({
+              id: String(c.index),
+              label: `${c.index + 1}. ${c.name}`,
+              hint: c.input.slice(0, 90).replace(/\s+/g, " "),
+              tags: c.is_error ? ["failed"] : [],
+              search: c.name + " " + c.input + " " + (c.output ?? ""),
+            }))}
+            selected={callIdx}
+            onSelect={setCallIdx}
+            placeholder="Search tool calls…"
+          >
+            {selectedCall ? (
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-mono text-sm font-medium">{selectedCall.name}</h3>
+                  {selectedCall.is_error ? <Badge variant="destructive">failed</Badge> : null}
+                  <span className="text-muted-foreground text-xs">
+                    message [{selectedCall.message}]
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <h4 className="text-muted-foreground text-xs tracking-wide uppercase">Input</h4>
+                  <Code>{selectedCall.input || "(none)"}</Code>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <h4 className="text-muted-foreground text-xs tracking-wide uppercase">Result</h4>
+                  <Code>{selectedCall.output ?? "(no result in this request — the call was still running)"}</Code>
+                </div>
+              </div>
+            ) : (
+              <Empty>
+                <EmptyHeader>
+                  <EmptyTitle>No tool calls</EmptyTitle>
+                  <EmptyDescription>
+                    Nothing was run in the conversation this call carries.
+                  </EmptyDescription>
                 </EmptyHeader>
               </Empty>
             )}
