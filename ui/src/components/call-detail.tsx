@@ -1,0 +1,461 @@
+import { useEffect, useMemo, useState } from "react"
+
+import { Explain, SourceBadge } from "@/components/explain"
+import { Code, OutlinePane, type OutlineItem } from "@/components/outline-pane"
+import { Badge } from "@/components/ui/badge"
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Separator } from "@/components/ui/separator"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  blockText,
+  cacheBreakpoints,
+  describeKind,
+  diffLines,
+  fmtMs,
+  fmtNum,
+  messagesText,
+  paramsText,
+  replyText,
+  systemTextOf,
+  toolsText,
+  viewOf,
+  type WireRecord,
+} from "@/lib/wire"
+
+function Stat({ term, label, value }: { term: string; label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <Explain term={term} className="text-muted-foreground text-[11px] tracking-wide uppercase">
+        {label}
+      </Explain>
+      <span className="font-mono text-sm">{value}</span>
+    </div>
+  )
+}
+
+function PaneHeader({ derived, children }: { derived?: boolean; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 border-b px-4 py-2">
+      <SourceBadge derived={derived} />
+      <span className="text-muted-foreground text-xs">{children}</span>
+    </div>
+  )
+}
+
+export function CallDetail({ call, prev }: { call: WireRecord; prev: WireRecord | null }) {
+  const req = call.request
+  const usage = call.response?.usage ?? {}
+  const kind = describeKind(call)
+  const codex = (call.provider ?? "anthropic") !== "anthropic"
+  const breaks = cacheBreakpoints(req)
+  const view = viewOf(call)
+  const prevView = prev ? viewOf(prev) : null
+  const sys = view.system
+  const tools = view.tools
+  const messages = view.messages
+  const prevMessageCount = prevView?.messages.length ?? 0
+  const prevTools = useMemo(() => new Set((prevView?.tools ?? []).map((t) => t.name)), [prevView])
+
+  const [tool, setTool] = useState<string | null>(null)
+  const [msg, setMsg] = useState<string | null>(null)
+  const [sysIdx, setSysIdx] = useState<string | null>(null)
+  useEffect(() => {
+    setTool(tools[0]?.name ?? null)
+    setMsg(messages.length ? String(messages.length - 1) : null)
+    setSysIdx(sys.length ? "0" : null)
+    // A new call resets the outline selection.
+  }, [call.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toolItems: OutlineItem[] = tools.map((t) => ({
+    id: t.name,
+    label: t.name,
+    hint: t.description?.split("\n")[0],
+    tags: [
+      ...(t.cache_control ? ["cache breakpoint"] : []),
+      ...(prev && !prevTools.has(t.name) ? ["new"] : []),
+    ],
+    search: t.name + " " + (t.description ?? ""),
+  }))
+
+  const msgItems: OutlineItem[] = messages.map((m, i) => {
+    const text = blockText(m.content)
+    return {
+      id: String(i),
+      label: `[${i}] ${m.role}`,
+      hint: text.slice(0, 90).replace(/\s+/g, " "),
+      tags: [
+        ...(m.cache_control ? ["cache breakpoint"] : []),
+        ...(Array.isArray(m.content) && m.content.some((c) => c.cache_control)
+          ? ["cache breakpoint"]
+          : []),
+        ...(prev && i >= prevMessageCount ? ["new"] : []),
+      ],
+      search: m.role + " " + text,
+    }
+  })
+
+  const sysItems: OutlineItem[] = sys.map((b, i) => ({
+    id: String(i),
+    label: `system[${i}]`,
+    hint: `${(b.text ?? "").length.toLocaleString("en-US")} chars — ${(b.text ?? "")
+      .slice(0, 70)
+      .replace(/\s+/g, " ")}`,
+    tags: b.cache_control ? ["cache breakpoint"] : [],
+    search: b.text ?? "",
+  }))
+
+  const selectedTool = tools.find((t) => t.name === tool)
+  const selectedMsg = msg != null ? messages[Number(msg)] : undefined
+  const selectedSys = sysIdx != null ? sys[Number(sysIdx)] : undefined
+
+  return (
+    // h-full, not flex-1: the resizable panel wrapper is a block element, so a
+    // flex hint is ignored and the pane grows to its content instead of scrolling.
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <div className="flex shrink-0 flex-col gap-3 border-b px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-mono text-sm font-medium">{call.model}</span>
+          <Explain term="kind">
+            <Badge variant={call.kind === "session" ? "default" : "secondary"}>{kind.label}</Badge>
+          </Explain>
+          <Badge variant={call.response?.status === 200 ? "outline" : "destructive"}>
+            {call.response?.status}
+          </Badge>
+          <span className="text-muted-foreground font-mono text-xs">{call.url}</span>
+        </div>
+        <p className="text-muted-foreground text-xs">{kind.why}</p>
+        <div className="flex flex-wrap gap-x-8 gap-y-2">
+          <Stat term="input" label="input" value={fmtNum(usage.input_tokens)} />
+          <Stat term="cache_read" label="cache read" value={fmtNum(usage.cache_read_input_tokens)} />
+          <Stat
+            term="cache_write"
+            label="cache write"
+            value={fmtNum(usage.cache_creation_input_tokens)}
+          />
+          <Stat term="output" label="output" value={fmtNum(usage.output_tokens)} />
+          <Stat term="ttfb" label="ttfb" value={fmtMs(call.ttfb_ms)} />
+          <Stat term="stop_reason" label="stop" value={call.response?.stop_reason ?? "–"} />
+        </div>
+      </div>
+
+      <Tabs defaultValue="overview" className="flex min-h-0 flex-1 flex-col gap-0">
+        <TabsList className="mx-4 mt-3 shrink-0">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="system">System ({sys.length})</TabsTrigger>
+          <TabsTrigger value="tools">Tools ({tools.length})</TabsTrigger>
+          <TabsTrigger value="messages">Messages ({messages.length})</TabsTrigger>
+          <TabsTrigger value="params">Params</TabsTrigger>
+          <TabsTrigger value="reply">Reply</TabsTrigger>
+          <TabsTrigger value="diff">Diff</TabsTrigger>
+          <TabsTrigger value="raw">Raw</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="mt-3 flex min-h-0 flex-1 flex-col">
+          <PaneHeader derived>wiretap built this summary from the record.</PaneHeader>
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="flex flex-col gap-4 p-4">
+              <section className="flex flex-col gap-2">
+                <h3 className="text-sm font-medium">Request shape</h3>
+                <Code>
+                  {[
+                    `system blocks : ${sys.length}`,
+                    `tools         : ${tools.length}`,
+                    `messages      : ${messages.length}`,
+                    `stream        : ${req.stream ?? false}`,
+                    ...(codex
+                      ? [
+                          `reasoning     : ${req.reasoning ? JSON.stringify(req.reasoning) : "–"}`,
+                          `verbosity     : ${(req.text as { verbosity?: string })?.verbosity ?? "–"}`,
+                          `service_tier  : ${req.service_tier ?? "–"}`,
+                          `store         : ${req.store ?? "–"}`,
+                          `cache key     : ${req.prompt_cache_key ?? "–"}`,
+                        ]
+                      : [
+                          `max_tokens    : ${req.max_tokens ?? "–"}`,
+                          `temperature   : ${req.temperature ?? "–"}`,
+                          `thinking      : ${req.thinking ? JSON.stringify(req.thinking) : "–"}`,
+                        ]),
+                  ].join("\n")}
+                </Code>
+              </section>
+              {codex ? (
+                <section className="flex flex-col gap-2">
+                  <Explain term="auto_cache" icon>
+                    <h3 className="text-sm font-medium">Caching</h3>
+                  </Explain>
+                  <p className="text-muted-foreground text-sm">
+                    No markers on the wire. This API caches on its own and groups calls by
+                    the cache key above.
+                  </p>
+                </section>
+              ) : (
+                <section className="flex flex-col gap-2">
+                  <Explain term="cache_control" icon>
+                    <h3 className="text-sm font-medium">Cache breakpoints ({breaks.length})</h3>
+                  </Explain>
+                  {breaks.length ? (
+                    <Code>{breaks.map((b) => `${b.where.padEnd(28)} ${b.type}`).join("\n")}</Code>
+                  ) : (
+                    <p className="text-muted-foreground text-sm">None on this call.</p>
+                  )}
+                </section>
+              )}
+              <section className="flex flex-col gap-2">
+                <Explain term={codex ? "codex_headers" : "betas"} icon>
+                  <h3 className="text-sm font-medium">Client flags</h3>
+                </Explain>
+                <Code>
+                  {codex
+                    ? Object.entries(call.request_headers ?? {})
+                        .filter(([k]) => k.startsWith("x-codex") || k === "originator")
+                        .map(([k, v]) => `${k}: ${String(v).slice(0, 120)}`)
+                        .join("\n") || "none"
+                    : (call.request_headers?.["anthropic-beta"] ?? "none")}
+                </Code>
+              </section>
+            </div>
+          </ScrollArea>
+        </TabsContent>
+
+        <TabsContent value="system" className="mt-3 flex min-h-0 flex-1 flex-col">
+          <PaneHeader>The system prompt, block by block, as sent.</PaneHeader>
+          <OutlinePane
+            items={sysItems}
+            selected={sysIdx}
+            onSelect={setSysIdx}
+            placeholder="Search the system prompt…"
+          >
+            {selectedSys ? (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-mono text-sm">system[{sysIdx}]</h3>
+                  {selectedSys.cache_control ? (
+                    <Explain term="cache_control">
+                      <Badge variant="secondary">cache_control {selectedSys.cache_control.type}</Badge>
+                    </Explain>
+                  ) : null}
+                  <span className="text-muted-foreground text-xs">
+                    {(selectedSys.text ?? "").length.toLocaleString("en-US")} characters
+                  </span>
+                </div>
+                <Code>{selectedSys.text ?? JSON.stringify(selectedSys, null, 2)}</Code>
+              </div>
+            ) : (
+              <Empty>
+                <EmptyHeader>
+                  <EmptyTitle>No system prompt</EmptyTitle>
+                </EmptyHeader>
+              </Empty>
+            )}
+          </OutlinePane>
+        </TabsContent>
+
+        <TabsContent value="tools" className="mt-3 flex min-h-0 flex-1 flex-col">
+          <PaneHeader>Every tool schema offered on this call.</PaneHeader>
+          <OutlinePane
+            items={toolItems}
+            selected={tool}
+            onSelect={setTool}
+            placeholder="Search tools…"
+          >
+            {selectedTool ? (
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-mono text-sm font-medium">{selectedTool.name}</h3>
+                  {selectedTool.cache_control ? (
+                    <Explain term="cache_control">
+                      <Badge variant="secondary">cache breakpoint</Badge>
+                    </Explain>
+                  ) : null}
+                  {prev && !prevTools.has(selectedTool.name) ? (
+                    <Explain term="new_badge">
+                      <Badge>new</Badge>
+                    </Explain>
+                  ) : null}
+                </div>
+                {selectedTool.description ? (
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                    {selectedTool.description}
+                  </p>
+                ) : null}
+                <Separator />
+                <Code>{JSON.stringify(selectedTool.input_schema ?? {}, null, 2)}</Code>
+              </div>
+            ) : (
+              <Empty>
+                <EmptyHeader>
+                  <EmptyTitle>No tools</EmptyTitle>
+                  <EmptyDescription>
+                    A call without tools is a background job, not the conversation.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            )}
+          </OutlinePane>
+        </TabsContent>
+
+        <TabsContent value="messages" className="mt-3 flex min-h-0 flex-1 flex-col">
+          <PaneHeader>The conversation as sent on this call.</PaneHeader>
+          <OutlinePane
+            items={msgItems}
+            selected={msg}
+            onSelect={setMsg}
+            placeholder="Search messages…"
+          >
+            {selectedMsg ? (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-mono text-sm">
+                    [{msg}] {selectedMsg.role}
+                  </h3>
+                  {prev && Number(msg) >= prevMessageCount ? (
+                    <Explain term="new_badge">
+                      <Badge>new</Badge>
+                    </Explain>
+                  ) : null}
+                </div>
+                <Code>{blockText(selectedMsg.content)}</Code>
+              </div>
+            ) : (
+              <Empty>
+                <EmptyHeader>
+                  <EmptyTitle>No messages</EmptyTitle>
+                </EmptyHeader>
+              </Empty>
+            )}
+          </OutlinePane>
+        </TabsContent>
+
+        <TabsContent value="params" className="mt-3 flex min-h-0 flex-1 flex-col">
+          <PaneHeader>Model parameters and headers, credentials removed.</PaneHeader>
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="flex flex-col gap-4 p-4">
+              <section className="flex flex-col gap-2">
+                <h3 className="text-sm font-medium">Parameters</h3>
+                <Code>{paramsText(req)}</Code>
+              </section>
+              <section className="flex flex-col gap-2">
+                <h3 className="text-sm font-medium">Request headers</h3>
+                <Code>{JSON.stringify(call.request_headers, null, 2)}</Code>
+              </section>
+              <section className="flex flex-col gap-2">
+                <h3 className="text-sm font-medium">Response headers</h3>
+                <Code>{JSON.stringify(call.response_headers, null, 2)}</Code>
+              </section>
+            </div>
+          </ScrollArea>
+        </TabsContent>
+
+        <TabsContent value="reply" className="mt-3 flex min-h-0 flex-1 flex-col">
+          <PaneHeader>What the API sent back.</PaneHeader>
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="flex flex-col gap-4 p-4">
+              <section className="flex flex-col gap-2">
+                <h3 className="text-sm font-medium">Reply text</h3>
+                <Code>{replyText(call.response) || "(none)"}</Code>
+              </section>
+              {call.response?.thinking ? (
+                <section className="flex flex-col gap-2">
+                  <Explain term="thinking" icon>
+                    <h3 className="text-sm font-medium">Thinking</h3>
+                  </Explain>
+                  <Code>{call.response.thinking}</Code>
+                </section>
+              ) : null}
+              {call.response?.tool_calls?.length ? (
+                <section className="flex flex-col gap-2">
+                  <h3 className="text-sm font-medium">Tool calls</h3>
+                  <Code>{JSON.stringify(call.response.tool_calls, null, 2)}</Code>
+                </section>
+              ) : null}
+            </div>
+          </ScrollArea>
+        </TabsContent>
+
+        <TabsContent value="diff" className="mt-3 flex min-h-0 flex-1 flex-col">
+          <PaneHeader derived>
+            wiretap compared this call with the previous call of the same shape — a
+            conversation turn against a conversation turn, not against a background job.
+          </PaneHeader>
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="flex flex-col gap-4 p-4">
+              {prev ? (
+                <>
+                  <DiffSection
+                    title="System"
+                    a={systemTextOf(prevView!)}
+                    b={systemTextOf(view)}
+                  />
+                  <DiffSection title="Tools" a={toolsText(prevView!)} b={toolsText(view)} />
+                  <DiffSection
+                    title="Messages"
+                    a={messagesText(prevView!)}
+                    b={messagesText(view)}
+                  />
+                  <DiffSection title="Parameters" a={paramsText(prev.request)} b={paramsText(req)} />
+                </>
+              ) : (
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyTitle>First call of this kind</EmptyTitle>
+                    <EmptyDescription>
+                      Nothing earlier in this session has the same shape, so a diff would compare
+                      a conversation turn against a background job.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              )}
+            </div>
+          </ScrollArea>
+        </TabsContent>
+
+        <TabsContent value="raw" className="mt-3 flex min-h-0 flex-1 flex-col">
+          <PaneHeader>The stored record, exactly as written to the file.</PaneHeader>
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="p-4">
+              <Code>{JSON.stringify(call, null, 2)}</Code>
+            </div>
+          </ScrollArea>
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+}
+
+function DiffSection({ title, a, b }: { title: string; a: string; b: string }) {
+  const rows = a === b ? [] : diffLines(a, b)
+  return (
+    <section className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <h3 className="text-sm font-medium">{title}</h3>
+        {a === b ? (
+          <Badge variant="outline">identical</Badge>
+        ) : (
+          <Badge variant="secondary">changed</Badge>
+        )}
+      </div>
+      {rows.length ? (
+        <div className="overflow-x-auto rounded-md border font-mono text-xs">
+          {rows.map((r, i) => (
+            <div
+              key={i}
+              className={
+                r.kind === "add"
+                  ? "bg-primary/10 text-primary px-3 py-0.5 whitespace-pre-wrap"
+                  : r.kind === "del"
+                    ? "bg-destructive/10 text-destructive px-3 py-0.5 whitespace-pre-wrap"
+                    : r.kind === "hunk"
+                      ? "bg-muted text-muted-foreground px-3 py-0.5"
+                      : "text-muted-foreground px-3 py-0.5 whitespace-pre-wrap"
+              }
+            >
+              {r.kind === "add" ? "+ " : r.kind === "del" ? "- " : r.kind === "hunk" ? "@@ " : "  "}
+              {r.text}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  )
+}

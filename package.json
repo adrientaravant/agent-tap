@@ -1,0 +1,53 @@
+{
+  "name": "agent-tap",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "See what Claude Code and Codex actually send to their model: system prompt, tool schemas, cache breakpoints. A local capture proxy and viewer.",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "codex",
+    "openai",
+    "anthropic",
+    "proxy",
+    "prompt",
+    "prompt-caching",
+    "debugging",
+    "llm",
+    "observability"
+  ],
+  "license": "MIT",
+  "author": "Adrien Taravant",
+  "homepage": "https://github.com/adrientaravant/agent-tap#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adrientaravant/agent-tap.git"
+  },
+  "bugs": {
+    "url": "https://github.com/adrientaravant/agent-tap/issues"
+  },
+  "bin": {
+    "agent-tap": "./bin/wiretap.mjs",
+    "wiretap": "./bin/wiretap.mjs"
+  },
+  "files": [
+    "bin/",
+    "server.mjs",
+    "viewer/dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/proxy.test.mjs",
+    "build": "npm --prefix ui run build",
+    "prepack": "npm run build"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ]
+}
