@@ -201,7 +201,7 @@ export function App() {
           agent-tap
         </span>
         <span className="text-muted-foreground text-xs">
-          what Claude Code actually sends to the API
+          what your agent actually sends to the API
         </span>
         <div className="ml-auto flex items-center gap-2">
           <span className="text-muted-foreground font-mono text-xs">

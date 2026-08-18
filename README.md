@@ -17,24 +17,35 @@ Everything stays on your machine. No dependency, no build step, no hosting.
 > test enforces it, but the body is kept verbatim. Treat `~/.local/share/agent-tap/` as
 > private.
 
-## Start
+## Install
+
+No install needed — run it straight from GitHub:
 
 ```bash
-npx agent-tap on
+npx github:adrientaravant/agent-tap on
 ```
 
-Start a session in a terminal — `claude` or `codex` — then open the viewer:
+Or clone it, which is better if you will run it often:
 
 ```bash
-npx agent-tap open
+git clone https://github.com/adrientaravant/agent-tap
+cd agent-tap && npm link
 ```
+
+`npm link` puts two commands on your PATH, `agent-tap` and the shorter `wiretap`; they
+do the same thing. Nothing is installed for the proxy itself — it is one file of plain
+Node with no dependency. Needs **Node 20 or later**. macOS and Linux.
+
+Not on npm yet, so plain `npx agent-tap` will not find it.
+
+## Use
 
 ```bash
-npx agent-tap off
+agent-tap on          # start capturing
+claude                # …or codex, in a terminal
+agent-tap open        # read what it sent
+agent-tap off         # stop, and restore direct calls
 ```
-
-Needs Node 20+. From a clone: `npm link`, then use `agent-tap` (or the shorter
-`wiretap`) directly.
 
 | Command | Does |
 | --- | --- |

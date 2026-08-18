@@ -24,8 +24,7 @@ the path of every API call.
 
 - `server.mjs` — proxy, record writer, viewer API. One file on purpose.
 - `bin/wiretap.mjs` — the on/off switch (`agent-tap`, `wiretap`).
-- `ui/` — viewer source (React, Tailwind, shadcn/ui). Build with `cd ui && npm run
-  build`; output goes to `viewer/dist`, which is committed so the tool runs with no
+- `ui/` — viewer source (React, Tailwind, shadcn/ui). Build with `cd ui && npm run build`; output goes to `viewer/dist`, which is committed so the tool runs with no
   build step. CI fails if it is stale.
 - `test/proxy.test.mjs` — end to end against a fake API. No network.
 
