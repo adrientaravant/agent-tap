@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useState } from "react"
-import { ArrowDownUpIcon, MoonIcon, RefreshCwIcon, SunIcon, Trash2Icon } from "lucide-react"
+import {
+  ArrowDownUpIcon,
+  CheckIcon,
+  CopyIcon,
+  MoonIcon,
+  RefreshCwIcon,
+  SunIcon,
+  Trash2Icon,
+} from "lucide-react"
 
 import { CallDetail } from "@/components/call-detail"
+import { Explain } from "@/components/explain"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty"
@@ -82,6 +91,51 @@ function ConfirmDelete({
   )
 }
 
+// The viewer answers no questions itself: it has no model and no key. The
+// detective is an agent the user already runs, pointed at the record file.
+// This builds the prompt that makes that a one-paste move.
+function detectivePrompt(dir: string, file: string) {
+  return [
+    `Read the captured agent session in ${dir}/${file} and answer my questions about it.`,
+    ``,
+    `The file is NDJSON: one API call per line, in time order. Each record has`,
+    `request.system (system prompt blocks), request.tools (tool schemas),`,
+    `request.messages (the conversation; a Codex record uses request.input instead),`,
+    `and response (reply text, tool calls, usage). The conversation grows call by`,
+    `call, so the last record with a large tool list holds the whole exchange —`,
+    `read that one first, and use earlier records to see how a turn changed things.`,
+    `The file can be large: locate with grep, then read around the match.`,
+    ``,
+    `Answer from the file only, and cite the seq number of the record you used.`,
+    `If the file does not show it, say so.`,
+    ``,
+    `My first question: `,
+  ].join("\n")
+}
+
+function AskAgentButton({ dir, file }: { dir: string | null; file: string }) {
+  const [copied, setCopied] = useState(false)
+  if (!dir) return null
+  return (
+    <Explain term="ask_agent">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="text-muted-foreground h-6 gap-1 px-2 text-[11px]"
+        onClick={() => {
+          navigator.clipboard.writeText(detectivePrompt(dir, file)).then(() => {
+            setCopied(true)
+            setTimeout(() => setCopied(false), 1500)
+          })
+        }}
+      >
+        {copied ? <CheckIcon className="size-3" /> : <CopyIcon className="size-3" />}
+        {copied ? "copied" : "ask an agent"}
+      </Button>
+    </Explain>
+  )
+}
+
 // A session file belongs to one client. Say which, in words a reader knows.
 const CLIENTS: Record<string, { label: string; short: string }> = {
   anthropic: { label: "Claude Code", short: "claude" },
@@ -130,6 +184,12 @@ export function App() {
   // The list reads top-down; a session can run to sixty calls, so newest
   // first keeps the current turn in reach.
   const [newestFirst, setNewestFirst] = useState(true)
+  const [dir, setDir] = useState<string | null>(null)
+  useEffect(() => {
+    api<{ dir: string }>("/info")
+      .then((i) => setDir(i.dir))
+      .catch(() => {})
+  }, [])
   const [detail, setDetail] = useState<{
     call: WireRecord
     prev: WireRecord | null
@@ -322,10 +382,11 @@ export function App() {
         <ResizablePanel defaultSize="22" minSize="15">
           <div className="flex h-full min-h-0 flex-col overflow-hidden">
             {session ? (
-              <div className="flex shrink-0 items-center justify-between border-b px-3 py-1.5">
-                <span className="text-muted-foreground font-mono text-[11px]">
+              <div className="flex shrink-0 items-center gap-1 border-b px-3 py-1.5">
+                <span className="text-muted-foreground mr-auto font-mono text-[11px]">
                   {calls.length} calls
                 </span>
+                <AskAgentButton dir={dir} file={session} />
                 <Button
                   variant="ghost"
                   size="sm"

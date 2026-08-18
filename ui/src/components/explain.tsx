@@ -82,6 +82,10 @@ export const GLOSSARY: Record<string, { title: string; body: string }> = {
     title: "What this call is",
     body: "One prompt from you produces several API calls. Only one is the conversation; the others are background jobs such as naming the session or deciding whether the agent is still working. wiretap reads the system prompt to tell them apart.",
   },
+  ask_agent: {
+    title: "Ask an agent about this session",
+    body: "Copies a prompt with the path of this session's record file. Paste it into Claude Code (or any agent that reads files) and ask questions — which skills ran, why a tool failed, what a turn added. The viewer itself holds no model and no key, so the questions run in the agent, on the raw file.",
+  },
   new_badge: {
     title: "New since the previous call",
     body: "This block was not present in the previous call of the same session. It is what this turn added.",

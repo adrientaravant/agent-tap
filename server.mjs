@@ -801,6 +801,12 @@ async function viewer(req, res, url) {
     return json(res, out)
   }
 
+  // Where the records live on disk, so the viewer can hand a session file
+  // to an agent. A path, not a payload: nothing is read here.
+  if (rest === '/api/info') {
+    return json(res, { dir: DATA_DIR })
+  }
+
   if (rest === '/api/sessions' && req.method === 'DELETE') {
     const files = (await fsp.readdir(DATA_DIR)).filter((f) => f.endsWith('.ndjson'))
     for (const f of files) await fsp.rm(path.join(DATA_DIR, f), { force: true })
