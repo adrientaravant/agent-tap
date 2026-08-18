@@ -917,18 +917,12 @@ server.requestTimeout = 0
 server.timeout = 0
 server.keepAliveTimeout = 60_000
 
-// mcp.mjs imports this file for the read-side helpers below; only a direct
-// `node server.mjs` starts the proxy.
-if (import.meta.main) {
-  server.listen(PORT, HOST, () => {
-    process.stdout.write(
-      `agent-tap\n` +
-        `  proxy    http://${HOST}:${PORT}  ->  ${UPSTREAM.origin}\n` +
-        `  viewer   http://${HOST}:${PORT}/__wire/\n` +
-        `  storage  ${DATA_DIR}\n\n` +
-        `  run:  ANTHROPIC_BASE_URL=http://${HOST}:${PORT} claude\n\n`
-    )
-  })
-}
-
-export { DATA_DIR, safeName, readSession, viewOf, callsOf, kindOf, titleOf, summarise }
+server.listen(PORT, HOST, () => {
+  process.stdout.write(
+    `agent-tap\n` +
+      `  proxy    http://${HOST}:${PORT}  ->  ${UPSTREAM.origin}\n` +
+      `  viewer   http://${HOST}:${PORT}/__wire/\n` +
+      `  storage  ${DATA_DIR}\n\n` +
+      `  run:  ANTHROPIC_BASE_URL=http://${HOST}:${PORT} claude\n\n`
+  )
+})

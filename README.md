@@ -94,20 +94,10 @@ ANTHROPIC_BASE_URL=http://127.0.0.1:8317 claude
 
 ## Ask an agent about a session
 
-Two ways to investigate a capture with an agent instead of your eyes:
-
-- **The button.** In the viewer, `ask an agent` (above the call list) copies a prompt
-  with the record file's path. Paste it into Claude Code and ask — "did it use the X
-  skill and how", "why did that tool call fail".
-- **The MCP server.** `mcp.mjs` exposes the captures over MCP, read-only: `list_sessions`,
-  `list_calls`, `read_call`, `search_session`. Register it once and every Claude Code
-  session can investigate captures without being handed a path:
-
-  ```bash
-  claude mcp add agent-tap -- node ~/path/to/agent-tap/mcp.mjs
-  ```
-
-The viewer itself never answers questions: it holds no model and no key.
+In the viewer, `ask an agent` (above the call list) copies a prompt with the record
+file's path. Paste it into Claude Code and ask — "did it use the X skill and how",
+"why did that tool call fail". The viewer itself never answers questions: it holds
+no model and no key, so the questions run in your agent, on the raw file.
 
 ## Limits
 
