@@ -2,9 +2,11 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "wire-log",
+      "name": "agent-tap",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["server.mjs"],
+      "runtimeArgs": [
+        "server.mjs"
+      ],
       "port": 8317
     }
   ]

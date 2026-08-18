@@ -1,73 +1,78 @@
 # agent-tap
 
-See what **Claude Code** and **Codex** actually send to the model: the full system
-prompt, every tool schema, the cache breakpoints, and the token counts — with a viewer
-to read it.
+See what your coding agent actually sends to the model.
 
-The session files in `~/.claude/projects/**/*.jsonl` and `~/.codex/sessions/*.jsonl`
-hold the conversation, but not the wire payload. This is a small proxy that sits
-between the client and the API, copies each request body to a file, and forwards the
-call unchanged.
+**Claude Code** and **Codex** write their conversation to `~/.claude/projects/**/*.jsonl`
+and `~/.codex/sessions/*.jsonl` — but not the wire payload. The system prompt, the tool
+schemas, the cache breakpoints and the real token counts never reach those files.
+`agent-tap` is a small local proxy that sits between the client and the API: it copies
+each request body to a file, forwards the call unchanged, and streams the reply straight
+back. A viewer reads the result.
 
-Everything stays on your machine. Nothing is sent anywhere except to the API the client
-was already calling, and credentials are stripped before anything is written to disk.
+Everything stays on your machine. No dependency, no build step, no hosting.
 
-> **What lands on disk.** A record holds the entire request: system prompt, tool
-> schemas, every message, and the reply. That is the point of the tool, and it means
-> the files contain whatever your session contained — file contents, command output,
-> and any secret a tool result happened to print. Credentials in headers are replaced
-> with `[redacted N chars]` before writing, and a test enforces it, but the body is
-> kept verbatim. Treat `~/.local/share/agent-tap/` as private, and never paste a
-> record into a shared channel without reading it first.
+> **Records hold whole sessions.** A record is the entire request: system prompt, tool
+> schemas, every message, and the reply — file contents and command output included.
+> Credentials in headers are replaced with `[redacted N chars]` before writing, and a
+> test enforces it, but the body is kept verbatim. Treat `~/.local/share/agent-tap/` as
+> private.
 
-## Install and run
+## Start
 
 ```bash
 npx agent-tap on
 ```
 
-Then start a session in a terminal — `claude` or `codex` — and open the viewer:
+Start a session in a terminal — `claude` or `codex` — then open the viewer:
 
 ```bash
 npx agent-tap open
 ```
 
-When you have seen enough:
-
 ```bash
 npx agent-tap off
 ```
 
-From a clone instead:
+Needs Node 20+. From a clone: `npm link`, then use `agent-tap` (or the shorter
+`wiretap`) directly.
 
-```bash
-git clone https://github.com/adrientaravant/agent-tap
-cd agent-tap && npm link     # gives you the `wiretap` command
-wiretap on
-```
+| Command | Does |
+| --- | --- |
+| `on` | start the proxy, route new sessions to it |
+| `off` | stop it, restore direct calls |
+| `status` | proxy, both routes, capture count |
+| `clear` | delete every record, so the next session is alone |
+| `open` / `tail` | the viewer / the proxy log |
 
-Requires Node 20 or later. No dependency is installed for the proxy itself.
+## What you get
+
+- **Sessions**, split by client, newest first.
+- **Calls** — one prompt makes several API calls, and only one is your conversation.
+  The others are background jobs (naming the session, deciding whether the agent is
+  still working). Each is labelled with what it is and why.
+- **System, Tools, Messages** — the payload, with a filterable outline beside it. A
+  session can send 200+ tool schemas, so the outline is the only sane way in.
+- **Tool calls** — every tool the agent ran, paired with the result it got back.
+- **Diff** — this call against the previous call *of the same kind*, which is what shows
+  you exactly what a turn added and where the cache breakpoints moved.
+
+Panels are labelled **on the wire** (the captured payload) or **computed** (built by
+agent-tap), so an interpretation is never mistaken for the payload. Terms like *cache
+write* have a hover explanation.
 
 ## What `on` changes
 
-Capture is a temporary state, not a permanent setup. `on` starts the proxy and routes
-new sessions to it:
-
-| Client | What is written | Undone by |
+| Client | Written | Undone by |
 | --- | --- | --- |
-| Claude Code | `env.ANTHROPIC_BASE_URL` in `~/.claude/settings.json` | `wiretap off` |
-| Codex | a `model_providers.wiretap` block in `~/.codex/config.toml`, between two markers | `wiretap off` |
+| Claude Code | `env.ANTHROPIC_BASE_URL` in `~/.claude/settings.json` | `off` |
+| Codex | a `model_providers` block in `~/.codex/config.toml`, between two markers | `off` |
 
 Both files are backed up to `.bak` first, and an on/off cycle leaves them
-byte-identical. Only sessions started **after** the switch are captured; sessions
-already open keep their old setting.
+byte-identical. Only sessions started **after** the switch are captured.
 
-```bash
-wiretap status   # proxy, both routes, number of captured sessions
-wiretap open     # the viewer
-wiretap tail     # the proxy log
-wiretap off      # stop, and restore direct calls
-```
+**After a reboot**, run `on` before you work. The proxy dies with the machine but the
+routing lives in files, and that pair is the one bad state: sessions try to reach a
+proxy that is not there. `status` warns when it happens; `on` or `off` both fix it.
 
 For one session only, with no global change:
 
@@ -75,152 +80,52 @@ For one session only, with no global change:
 ANTHROPIC_BASE_URL=http://127.0.0.1:8317 claude
 ```
 
-### After a reboot
+## Limits
 
-The proxy is a process and dies with the machine; the routing lives in files and
-survives. That pair is the one bad state: new sessions try to reach a proxy that is not
-running and fail to connect. Run `wiretap on` before you work, or `wiretap off` when
-you finish. `wiretap status` warns when routing is on and the proxy is down.
-
-### Codex looks nothing like Claude Code on the wire
-
-Measured, not read in documentation. With a ChatGPT sign-in, Codex sends:
-
-- **no tool definitions in `tools`** — they ride inside `input[0]` as an
-  `additional_tools` item;
-- **no `instructions`** — the system prompt is a set of developer messages inside
-  `input`;
-- **no cache markers** — that API caches on its own and reports only `cached_tokens`,
-  grouped by a `prompt_cache_key`;
-- **no `content-type` on the reply**, so a stream has to be recognised from the request.
-
-The server normalises both clients into one shape when a record is read, so the viewer
-has a single implementation. The stored record is never rewritten: the Raw tab always
-shows exactly what crossed the wire.
-
-### The Claude desktop app cannot be captured
-
-Measured on 2026-08-17, not read in documentation. The app process itself does
-inherit the variable — `launchctl setenv ANTHROPIC_BASE_URL …` reaches it — but
-the app overrides it for every session it spawns:
-
-```
-app process     ANTHROPIC_BASE_URL=http://127.0.0.1:8317
-session it runs ANTHROPIC_BASE_URL=https://api.anthropic.com
-```
-
-So no setting at any level captures a desktop session. Only a terminal session
-can be routed. Capturing the app would need TLS interception of
-`api.anthropic.com` — a local certificate authority in the keychain, a hosts
-entry, and the proxy on port 443. That is out of scope here.
-
-### While capture is on
-
-Every new session depends on the proxy. If the proxy is not running, those
-sessions fail to connect. `wiretap status` reports that state and tells you how
-to fix it. After a reboot the proxy is gone but the variables remain, so run
-`wiretap on` or `wiretap off` before you work.
-
-## What the viewer shows
-
-Every panel carries a badge saying where its content comes from: **on the wire** means
-the captured payload, **computed** means wiretap built it. Numbers and terms have a
-hover explanation of what they mean in the harness.
-
-- **Sessions** — one file per Claude Code session, newest first.
-- **Calls** — model, tool count, cache read and write, duration.
-- **What this call is** — one prompt of yours produces several API calls. Only one is
-  the conversation; the others are background jobs such as the title generator or the
-  state check that drives the idle indicator. wiretap reads the system prompt to tell
-  them apart and labels each call.
-- **System / Tools / Messages** — the payload, with an outline beside it. A session can
-  send more than two hundred tool schemas, so the outline filters by name and by
-  description, and marks cache breakpoints and blocks that are new this turn.
-- **Params / Reply / Raw** — parameters, headers, the reply, and the stored record.
-- **Diff** — this call against the previous call **of the same shape**, so a
-  conversation turn is never compared with a background job.
-
-### Building the viewer
-
-The viewer is a React app built with shadcn/ui. The proxy itself keeps no dependency;
-the UI build is separate and produces static files in `viewer/dist`.
-
-```bash
-cd ui && npm install && npm run build
-```
-
-`npm run dev` runs Vite with the API proxied to port 8317.
+- **The Claude desktop app cannot be captured.** It inherits the variable, then
+  overrides it with the official host for every session it spawns (compared with
+  `ps eww` on both processes). Terminal sessions only.
+- **Codex looks nothing like Claude Code on the wire.** With a ChatGPT sign-in it sends
+  no tool definitions in `tools` (they ride inside `input[0]`), no `instructions` (the
+  system prompt is developer messages), no cache markers, and no `content-type` on the
+  reply. Records are normalised when read, never rewritten — the Raw tab always shows
+  what crossed the wire.
+- A tool call appears once the **next** request carries its result, so the last call of
+  a turn shows no result yet.
 
 ## Storage
 
-One NDJSON file per session, one line per call:
+One NDJSON file per session, one line per call, in `~/.local/share/agent-tap/`. Delete a
+file, use the trash icon in the viewer, or run `agent-tap clear`. Nothing rotates
+automatically and a working session is tens of megabytes, so keep an eye on the size.
 
-```
-~/.local/share/agent-tap/<date>_<session-id>.ndjson
-```
+| Variable | Default |
+| --- | --- |
+| `WIRETAP_PORT` | `8317` |
+| `WIRETAP_HOST` | `127.0.0.1` |
+| `WIRETAP_DIR` | `~/.local/share/agent-tap` |
+| `WIRETAP_UPSTREAM` | `https://api.anthropic.com` |
+| `WIRETAP_CODEX_UPSTREAM` | `https://chatgpt.com/backend-api/codex` |
+| `WIRETAP_CA` | macOS system roots |
 
-The session id comes from `metadata.user_id` in the request body. If the body has no
-session id, the file name uses a hash of the start of the conversation.
+## Troubleshooting
 
-Delete a file to remove a session. Nothing rotates the directory automatically, so
-check its size from time to time.
+**`unable to get local issuer certificate`** — some Node builds ship an incomplete root
+list (a Homebrew Node 26 on macOS has no GlobalSign root, and then *every* HTTPS call
+from Node fails, not just this tool). agent-tap adds the macOS system roots at start and
+caches them. Verification is never turned off. `WIRETAP_CA` points at another bundle.
 
-## Credentials
-
-The proxy receives the `Authorization` header. It forwards the header unchanged to the
-API and replaces it with `[redacted N chars]` before it writes the record. The same
-applies to `x-api-key`, cookies, and any header whose name ends in `-token`, `-secret`,
-or `-api-key`. A test asserts that no credential reaches the disk.
-
-Response bodies are recorded in full. If a tool result in the conversation contains a
-secret, that secret is in the file. The directory holds the full text of your sessions —
-treat it as private.
-
-## Configuration
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `WIRETAP_PORT` | `8317` | Listen port |
-| `WIRETAP_HOST` | `127.0.0.1` | Listen address |
-| `WIRETAP_UPSTREAM` | `https://api.anthropic.com` | Where calls go |
-| `WIRETAP_DIR` | `~/.local/share/agent-tap` | Where records go |
-| `WIRETAP_CA` | macOS system roots | Extra root certificates, PEM file |
-
-## Certificates
-
-The Homebrew Node 26.5.0 on this machine ships a root list of 120 certificates
-with no GlobalSign and no Google Trust Services root. Every HTTPS call from that
-Node fails with `unable to get local issuer certificate`, including the calls
-this proxy forwards. It is not specific to this tool:
+## Develop
 
 ```bash
-node -e "require('https').get('https://www.google.com/',r=>console.log(r.statusCode)).on('error',e=>console.log(e.message))"
+node --test test/proxy.test.mjs   # fake API, no network
+cd ui && npm run build            # viewer → viewer/dist, committed on purpose
 ```
 
-At start the proxy adds the macOS system roots to Node's own list, and caches
-them in `system-ca.pem` for 30 days. Verification stays on. `WIRETAP_CA`
-replaces the source if you need another bundle.
-
-## Test
-
-```bash
-node --test test/proxy.test.mjs
-```
-
-The suite starts a fake API and the real proxy, then checks that the reply passes
-through unchanged, that the SSE stream is not buffered, that credentials do not reach
-the disk, and that the viewer API refuses a path outside the data directory.
-
-## Contributing
-
-Issues and pull requests welcome. The proxy has no dependency and the test suite runs
-against a fake API, so `node --test test/proxy.test.mjs` is the whole loop. If you touch
-the viewer, run `cd ui && npm run build` and commit `viewer/dist` — it is committed on
-purpose so the tool runs without a build step.
-
-Ports for other clients are welcome. A client needs three things: a base-URL setting, a
-prefix in the `PROVIDERS` table in `server.mjs`, and a reply-stream reader.
+The proxy is one file, `server.mjs`, with no dependency. The viewer is React and
+shadcn/ui under `ui/`. Adding a client needs three things: a base-URL setting, an entry
+in the `PROVIDERS` table, and a reply-stream reader. Pull requests welcome.
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
