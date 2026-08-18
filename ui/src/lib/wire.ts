@@ -131,6 +131,9 @@ export type SessionInfo = {
   mtime: string
   started: string | null
   model: string | null
+  // The thread name: the captured title-generator reply when the session
+  // has one, otherwise the first thing the user typed.
+  title: string | null
 }
 
 export function viewOf(rec: WireRecord): CallView {

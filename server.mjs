@@ -708,6 +708,45 @@ function kindOf(rec) {
   return 'other'
 }
 
+// A human name for a session, derived on read. Claude runs a background
+// call whose reply becomes the thread title in the app; when a session has
+// one, that reply is the honest name. Otherwise the first thing the user
+// typed serves. Harness text rides inside user messages, so skip it.
+const HARNESS_PREFIXES = [
+  '<system-reminder>',
+  '<task-notification>',
+  '<INSTRUCTIONS>',
+  '<environment_context>',
+  '<user_instructions>',
+  '<turn_context>',
+  '<recommended_plugins>',
+  '<permissions',
+  '# AGENTS.md instructions',
+]
+
+function titleOf(recs) {
+  for (const rec of recs) {
+    if (kindOf(rec) !== 'title') continue
+    const t = (rec.response?.text || '').trim().replace(/^"|"$/g, '')
+    if (t) return t.split('\n')[0].slice(0, 80)
+  }
+  for (const rec of recs) {
+    for (const m of viewOf(rec).messages) {
+      if (m.role !== 'user') continue
+      const text = (
+        typeof m.content === 'string'
+          ? m.content
+          : Array.isArray(m.content)
+            ? m.content.map((c) => (c?.type === 'text' ? (c.text ?? '') : '')).join('\n')
+            : ''
+      ).trim()
+      if (!text || HARNESS_PREFIXES.some((p) => text.startsWith(p))) continue
+      return text.replace(/\s+/g, ' ').slice(0, 80)
+    }
+  }
+  return null
+}
+
 function summarise(rec) {
   const u = rec.response?.usage || {}
   const view = viewOf(rec)
@@ -755,6 +794,7 @@ async function viewer(req, res, url) {
         started: first?.ts ?? null,
         provider: first?.provider ?? 'anthropic',
         model: recs.at(-1)?.model ?? null,
+        title: titleOf(recs),
       })
     }
     out.sort((a, b) => b.mtime.localeCompare(a.mtime))

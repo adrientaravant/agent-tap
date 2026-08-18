@@ -286,9 +286,12 @@ export function App() {
                             {shortId(s.file)}
                           </span>
                         </span>
-                        <span className="truncate font-mono text-xs">{s.model ?? "–"}</span>
-                        <span className="text-muted-foreground font-mono text-[11px]">
-                          {fmtTime(s.mtime)} · {s.calls} calls · {fmtBytes(s.bytes)}
+                        <span className="line-clamp-2 text-xs font-medium">
+                          {s.title ?? s.model ?? "–"}
+                        </span>
+                        <span className="text-muted-foreground truncate font-mono text-[11px]">
+                          {s.model ?? "–"} · {fmtTime(s.mtime)} · {s.calls} calls ·{" "}
+                          {fmtBytes(s.bytes)}
                         </span>
                       </button>
                       <ConfirmDelete
