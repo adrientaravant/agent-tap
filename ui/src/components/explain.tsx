@@ -84,7 +84,7 @@ export const GLOSSARY: Record<string, { title: string; body: string }> = {
   },
   ask_agent: {
     title: "Ask an agent about this session",
-    body: "Copies a prompt with the path of this session's record file. Paste it into Claude Code (or any agent that reads files) and ask questions — which skills ran, why a tool failed, what a turn added. The viewer itself holds no model and no key, so the questions run in the agent, on the raw file.",
+    body: "Copies a prompt with the path of this session's record file. Paste it into Claude Code (or any agent that reads files) and ask questions — which skills ran, why a tool failed, what a turn added. The viewer itself holds no model and no key, so the questions run in the agent, on the raw file. For a standing setup, register the bundled MCP server instead: claude mcp add agent-tap -- node <repo>/mcp.mjs",
   },
   new_badge: {
     title: "New since the previous call",

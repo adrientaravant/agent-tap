@@ -22,7 +22,10 @@ the path of every API call.
 
 ## Layout
 
-- `server.mjs` — proxy, record writer, viewer API. One file on purpose.
+- `server.mjs` — proxy, record writer, viewer API. One file on purpose. It exports its
+  read-side helpers and listens only when run directly.
+- `mcp.mjs` — read-only MCP server over the records, for asking an agent about a
+  session. Plain Node, stdio, no dependency. It must never write.
 - `bin/wiretap.mjs` — the on/off switch (`agent-tap`, `wiretap`).
 - `ui/` — viewer source (React, Tailwind, shadcn/ui). Build with `cd ui && npm run build`; output goes to `viewer/dist`, which is committed so the tool runs with no
   build step. CI fails if it is stale.

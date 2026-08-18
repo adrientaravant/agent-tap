@@ -296,3 +296,79 @@ test('serves the viewer page', async () => {
   assert.equal(res.status, 200)
   assert.ok(res.text.includes('agent-tap'))
 })
+
+// The MCP server speaks newline-delimited JSON-RPC on stdio and only reads.
+test('MCP server lists, searches and reads a session', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wiretap-mcp-'))
+  const rec = {
+    id: 't1', seq: 0, ts: new Date().toISOString(), url: '/v1/messages',
+    model: 'claude-opus-5', took_ms: 5, ttfb_ms: 1,
+    request_headers: {}, response_headers: {},
+    request: {
+      model: 'claude-opus-5',
+      system: [{ type: 'text', text: 'You are a test.' }],
+      tools: [{ name: 'Read', description: 'Reads a file.', input_schema: {} }],
+      messages: [
+        { role: 'user', content: [{ type: 'text', text: 'find the needle' }] },
+        {
+          role: 'assistant',
+          content: [{ type: 'tool_use', id: 'tu1', name: 'Read', input: { file_path: '/x' } }],
+        },
+        {
+          role: 'user',
+          content: [
+            { type: 'tool_result', tool_use_id: 'tu1', content: [{ type: 'text', text: 'needle found' }] },
+          ],
+        },
+      ],
+    },
+    response: { status: 200, stop_reason: 'end_turn', usage: {}, text: 'done' },
+  }
+  fs.writeFileSync(path.join(dir, '2026-01-01_mcp.ndjson'), JSON.stringify(rec) + '\n')
+
+  const child = spawn(process.execPath, [path.join(HERE, '..', 'mcp.mjs')], {
+    env: { ...process.env, WIRETAP_DIR: dir },
+    stdio: ['pipe', 'pipe', 'inherit'],
+  })
+  const lines = []
+  let buf = ''
+  child.stdout.setEncoding('utf8')
+  child.stdout.on('data', (c) => {
+    buf += c
+    let nl
+    while ((nl = buf.indexOf('\n')) !== -1) {
+      lines.push(JSON.parse(buf.slice(0, nl)))
+      buf = buf.slice(nl + 1)
+    }
+  })
+  const send = (o) => child.stdin.write(JSON.stringify(o) + '\n')
+  send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } })
+  send({ jsonrpc: '2.0', method: 'notifications/initialized' })
+  send({ jsonrpc: '2.0', id: 2, method: 'tools/list' })
+  send({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'list_sessions', arguments: {} } })
+  send({
+    jsonrpc: '2.0', id: 4, method: 'tools/call',
+    params: { name: 'search_session', arguments: { file: '2026-01-01_mcp.ndjson', query: 'needle' } },
+  })
+  send({
+    jsonrpc: '2.0', id: 5, method: 'tools/call',
+    params: { name: 'read_call', arguments: { file: '2026-01-01_mcp.ndjson', seq: 0, part: 'tool_runs' } },
+  })
+  send({
+    jsonrpc: '2.0', id: 6, method: 'tools/call',
+    params: { name: 'read_call', arguments: { file: '../escape.ndjson', seq: 0, part: 'reply' } },
+  })
+  child.stdin.end()
+  await new Promise((r) => child.on('exit', r))
+
+  const by = (id) => lines.find((l) => l.id === id)
+  assert.equal(by(1).result.serverInfo.name, 'agent-tap')
+  assert.equal(by(2).result.tools.length, 4)
+  assert.ok(by(3).result.content[0].text.includes('2026-01-01_mcp.ndjson'))
+  const hits = JSON.parse(by(4).result.content[0].text)
+  assert.ok(hits.some((h) => h.part.startsWith('message[0]')), 'search misses the user message')
+  const runs = by(5).result.content[0].text
+  assert.ok(runs.includes('Read') && runs.includes('needle found'), 'tool run not paired with result')
+  assert.equal(by(6).result.isError, true, 'a path outside the data directory must fail')
+  fs.rmSync(dir, { recursive: true, force: true })
+})
