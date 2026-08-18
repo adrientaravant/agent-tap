@@ -440,7 +440,7 @@ export function App() {
 
         <ResizablePanel defaultSize="60" minSize="30">
           {detail ? (
-            <CallDetail call={detail.call} prev={detail.comparable} />
+            <CallDetail call={detail.call} prev={detail.comparable} session={calls} />
           ) : (
             <Empty className="h-full">
               <EmptyHeader>

@@ -8,6 +8,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/u
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { cn } from "@/lib/utils"
 import {
   blockText,
   cacheBreakpoints,
@@ -22,6 +23,7 @@ import {
   toolsText,
   transcriptOf,
   viewOf,
+  type CallSummary,
   type WireRecord,
 } from "@/lib/wire"
 
@@ -45,7 +47,15 @@ function PaneHeader({ derived, children }: { derived?: boolean; children: React.
   )
 }
 
-export function CallDetail({ call, prev }: { call: WireRecord; prev: WireRecord | null }) {
+export function CallDetail({
+  call,
+  prev,
+  session,
+}: {
+  call: WireRecord
+  prev: WireRecord | null
+  session: CallSummary[]
+}) {
   const req = call.request
   const usage = call.response?.usage ?? {}
   const kind = describeKind(call)
@@ -149,6 +159,7 @@ export function CallDetail({ call, prev }: { call: WireRecord; prev: WireRecord 
       <Tabs defaultValue="chat" className="flex min-h-0 flex-1 flex-col gap-0">
         <TabsList className="mx-4 mt-3 shrink-0">
           <TabsTrigger value="chat">Conversation</TabsTrigger>
+          <TabsTrigger value="context">Context</TabsTrigger>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="system">System ({sys.length})</TabsTrigger>
           <TabsTrigger value="tools">Tools ({tools.length})</TabsTrigger>
@@ -169,6 +180,17 @@ export function CallDetail({ call, prev }: { call: WireRecord; prev: WireRecord 
           <div className="min-h-0 flex-1">
             <Transcript items={transcript} />
           </div>
+        </TabsContent>
+
+        <TabsContent value="context" className="mt-3 flex min-h-0 flex-1 flex-col">
+          <PaneHeader derived>
+            What fills the context window on this call, and how it grows over the session.
+            Sizes are measured on the captured request; token counts are what the API
+            reported.
+          </PaneHeader>
+          <ScrollArea className="min-h-0 flex-1">
+            <ContextPane call={call} view={view} session={session} />
+          </ScrollArea>
         </TabsContent>
 
         <TabsContent value="overview" className="mt-3 flex min-h-0 flex-1 flex-col">
@@ -486,6 +508,128 @@ export function CallDetail({ call, prev }: { call: WireRecord; prev: WireRecord 
           </ScrollArea>
         </TabsContent>
       </Tabs>
+    </div>
+  )
+}
+
+// One measured row of the composition table: a label, a size, a share bar.
+function ShareRow({ label, chars, total, hint }: { label: string; chars: number; total: number; hint?: string }) {
+  const pct = total ? (chars / total) * 100 : 0
+  return (
+    <div className="flex items-center gap-2 font-mono text-xs">
+      <span className="w-40 shrink-0">{label}</span>
+      <span className="text-muted-foreground w-24 shrink-0 text-right">
+        {chars.toLocaleString("en-US")} ch
+      </span>
+      <span className="text-muted-foreground w-14 shrink-0 text-right">{pct.toFixed(1)}%</span>
+      <span className="bg-muted relative h-2 min-w-0 flex-1 overflow-hidden rounded-sm">
+        <span className="bg-primary/60 absolute inset-y-0 left-0" style={{ width: `${pct}%` }} />
+      </span>
+      {hint ? <span className="text-muted-foreground w-28 shrink-0 truncate">{hint}</span> : null}
+    </div>
+  )
+}
+
+// What fills the context window, measured on the captured request, plus the
+// token growth the API reported call by call. All derived; nothing here is
+// an estimate of tokens from text.
+function ContextPane({
+  call,
+  view,
+  session,
+}: {
+  call: WireRecord
+  view: ReturnType<typeof viewOf>
+  session: CallSummary[]
+}) {
+  const sizes = useMemo(() => {
+    const sys = view.system.reduce((n, b) => n + (b.text ?? "").length, 0)
+    const tools = view.tools.reduce((n, t) => n + JSON.stringify(t).length, 0)
+    const msgs = view.messages.reduce((n, m) => n + blockText(m.content).length, 0)
+    const perTool = view.tools
+      .map((t) => ({ name: t.name, chars: JSON.stringify(t).length }))
+      .sort((a, b) => b.chars - a.chars)
+    return { sys, tools, msgs, total: sys + tools + msgs, perTool }
+  }, [call.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const prompt = (c: CallSummary) =>
+    (c.usage.input ?? 0) + (c.usage.cache_read ?? 0) + (c.usage.cache_write ?? 0)
+  const maxPrompt = Math.max(1, ...session.map(prompt))
+  const u = call.response?.usage ?? {}
+  const promptNow =
+    (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)
+
+  return (
+    <div className="flex flex-col gap-6 p-4">
+      <section className="flex flex-col gap-2">
+        <h3 className="text-sm font-medium">What fills the prompt on this call</h3>
+        <p className="text-muted-foreground text-xs">
+          Measured in characters of the captured request. The API reported{" "}
+          {fmtNum(promptNow)} prompt tokens for it in total.
+        </p>
+        <div className="flex flex-col gap-1.5">
+          <ShareRow
+            label={`system (${view.system.length} blocks)`}
+            chars={sizes.sys}
+            total={sizes.total}
+          />
+          <ShareRow
+            label={`tools (${view.tools.length} definitions)`}
+            chars={sizes.tools}
+            total={sizes.total}
+          />
+          <ShareRow
+            label={`messages (${view.messages.length})`}
+            chars={sizes.msgs}
+            total={sizes.total}
+          />
+        </div>
+      </section>
+
+      {sizes.perTool.length ? (
+        <section className="flex flex-col gap-2">
+          <h3 className="text-sm font-medium">Largest tool definitions</h3>
+          <div className="flex flex-col gap-1.5">
+            {sizes.perTool.slice(0, 8).map((t) => (
+              <ShareRow key={t.name} label={t.name} chars={t.chars} total={sizes.tools} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <section className="flex flex-col gap-2">
+        <h3 className="text-sm font-medium">Growth over the session</h3>
+        <p className="text-muted-foreground text-xs">
+          Prompt tokens the API reported per call — new input, cache reads and cache
+          writes together. The bar that keeps growing is the conversation carrying its
+          own history forward.
+        </p>
+        <div className="flex flex-col gap-1">
+          {session.map((c) => (
+            <div
+              key={c.id}
+              className={cn(
+                "flex items-center gap-2 rounded-sm px-1 font-mono text-[11px]",
+                c.seq === call.seq && "bg-accent"
+              )}
+            >
+              <span className="w-10 shrink-0">#{c.seq}</span>
+              <span className="text-muted-foreground w-24 shrink-0 text-right">
+                {fmtNum(prompt(c))} tok
+              </span>
+              <span className="bg-muted relative h-2 min-w-0 flex-1 overflow-hidden rounded-sm">
+                <span
+                  className="bg-primary/60 absolute inset-y-0 left-0"
+                  style={{ width: `${(prompt(c) / maxPrompt) * 100}%` }}
+                />
+              </span>
+              <span className="text-muted-foreground w-20 shrink-0 text-right">
+                out {fmtNum(c.usage.output)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   )
 }
