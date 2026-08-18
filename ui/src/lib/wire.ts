@@ -218,11 +218,11 @@ const KINDS: Record<KindKey, { label: string; why: string }> = {
   },
   title: {
     label: "title generator",
-    why: 'A background call asking for "a concise, sentence-case title (3-7 words)". Its reply becomes the name of the session.',
+    why: "A background call that writes the thread title shown in the app. agent-tap uses its reply to name the session in the list.",
   },
   state: {
-    label: "state check",
-    why: "A background call that reads the tail of the reply and decides whether the agent is working, done, blocked, or waiting. It drives the idle indicator.",
+    label: "status updater",
+    why: "A background call that writes the short status line the app shows while the agent works. It is not part of the conversation.",
   },
   summary: {
     label: "summariser",
@@ -336,6 +336,7 @@ const NOTE_PREFIXES = [
   "<recommended_plugins>",
   "<permissions",
   "# AGENTS.md instructions",
+  "# Files mentioned by the user",
 ]
 
 function roleKind(role: string, text: string): TranscriptItem["kind"] {

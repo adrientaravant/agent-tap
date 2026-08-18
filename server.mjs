@@ -695,8 +695,15 @@ function blockTextOf(content) {
 
 function kindOf(rec) {
   if ((rec.provider ?? 'anthropic') !== 'anthropic') {
-    // Codex runs one call per turn; there are no side jobs to separate.
-    return viewOf(rec).tools.length > 0 ? 'session' : 'other'
+    // Codex gives each background job its own thread, so the job is read
+    // from the instructions it carries, not from the file it sits in.
+    const view = viewOf(rec)
+    const text = view.messages
+      .map((m) => (typeof m.content === 'string' ? m.content : ''))
+      .join('\n')
+    if (/provide a short title for a task/.test(text)) return 'title'
+    if (/one-line activity update/.test(text)) return 'state'
+    return view.tools.length > 0 ? 'session' : 'other'
   }
   const s = rec.request?.system
   const sys = typeof s === 'string' ? s : (s || []).map((b) => b?.text || '').join('\n')
@@ -722,30 +729,69 @@ const HARNESS_PREFIXES = [
   '<recommended_plugins>',
   '<permissions',
   '# AGENTS.md instructions',
+  '# Files mentioned by the user',
 ]
 
-function titleOf(recs) {
-  for (const rec of recs) {
-    if (kindOf(rec) !== 'title') continue
-    const t = (rec.response?.text || '').trim().replace(/^"|"$/g, '')
-    if (t) return t.split('\n')[0].slice(0, 80)
+// The title the client generated for the thread. Claude replies with plain
+// text; Codex replies with {"title": …}.
+function parsedTitle(rec) {
+  const t = (rec.response?.text || '').trim()
+  if (!t) return null
+  try {
+    const j = JSON.parse(t)
+    if (typeof j?.title === 'string' && j.title) return j.title.slice(0, 80)
+  } catch {}
+  return t.split('\n')[0].replace(/^"|"$/g, '').slice(0, 80)
+}
+
+// What the user typed, read from conversation calls only, so a background
+// job's instructions never become a session name. The last call carries the
+// whole history, so one conversation record is enough. `first` is the first
+// clean text, for a fallback name; `all` keeps every user text, harness
+// preambles included, because a title's prompt can hide behind one.
+function userTextsOf(recs) {
+  const rec = [...recs].reverse().find((r) => kindOf(r) === 'session')
+  if (!rec) return { first: null, all: '' }
+  let first = null
+  const all = []
+  for (const m of viewOf(rec).messages) {
+    if (m.role !== 'user') continue
+    const text = (
+      typeof m.content === 'string'
+        ? m.content
+        : Array.isArray(m.content)
+          ? m.content.map((c) => (c?.type === 'text' ? (c.text ?? '') : '')).join('\n')
+          : ''
+    ).trim()
+    if (!text) continue
+    all.push(text)
+    if (!first && !HARNESS_PREFIXES.some((p) => text.startsWith(p)))
+      first = text.replace(/\s+/g, ' ').slice(0, 200)
   }
-  for (const rec of recs) {
-    for (const m of viewOf(rec).messages) {
-      if (m.role !== 'user') continue
-      const text = (
-        typeof m.content === 'string'
-          ? m.content
-          : Array.isArray(m.content)
-            ? m.content.map((c) => (c?.type === 'text' ? (c.text ?? '') : '')).join('\n')
-            : ''
-      ).trim()
-      if (!text || HARNESS_PREFIXES.some((p) => text.startsWith(p))) continue
-      return text.replace(/\s+/g, ' ').slice(0, 80)
-    }
+  return { first, all: normPrompt(all.join('\n'), Infinity) }
+}
+
+// A Codex title call runs in its own thread, so it cannot be joined to the
+// conversation by any id. It does carry the prompt it names, after a
+// "User prompt:" marker — that text is the join key.
+function embeddedPrompt(rec) {
+  for (const m of viewOf(rec).messages) {
+    const text = typeof m.content === 'string' ? m.content : ''
+    const at = text.lastIndexOf('User prompt:')
+    if (at !== -1) return text.slice(at + 'User prompt:'.length)
   }
   return null
 }
+
+// Whitespace and HTML escapes differ between the embedded prompt and the
+// message as sent; compare a normalised head.
+const normPrompt = (s, cap = 120) =>
+  s
+    .replace(/&#x?\w+;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+    .slice(0, cap)
 
 function summarise(rec) {
   const u = rec.response?.usage || {}
@@ -782,10 +828,22 @@ async function viewer(req, res, url) {
   if (rest === '/api/sessions' && req.method !== 'DELETE') {
     const files = (await fsp.readdir(DATA_DIR)).filter((f) => f.endsWith('.ndjson'))
     const out = []
+    // A Codex title lives in another file than the conversation it names, so
+    // titles are collected across every file first, each with the prompt it
+    // was generated from, then matched.
+    const titleEntries = []
     for (const f of files) {
       const st = await fsp.stat(path.join(DATA_DIR, f))
       const recs = await readSession(f).catch(() => [])
       const first = recs[0]
+      let ownTitle = null
+      for (const rec of recs) {
+        if (kindOf(rec) !== 'title') continue
+        const t = parsedTitle(rec)
+        ownTitle ??= t
+        const p = embeddedPrompt(rec)
+        if (t && p) titleEntries.push({ prompt: normPrompt(p), title: t })
+      }
       out.push({
         file: f,
         calls: recs.length,
@@ -794,8 +852,21 @@ async function viewer(req, res, url) {
         started: first?.ts ?? null,
         provider: first?.provider ?? 'anthropic',
         model: recs.at(-1)?.model ?? null,
-        title: titleOf(recs),
+        ownTitle,
+        userTexts: userTextsOf(recs),
       })
+    }
+    for (const s of out) {
+      // A Codex title is generated from one user prompt of the thread, not
+      // always the first, and the prompt can sit behind a harness preamble —
+      // so the join is containment in all the user text. Very short prompts
+      // would match everywhere, so they are skipped.
+      const matched = titleEntries.find(
+        (e) => e.prompt.length >= 15 && s.userTexts.all.includes(e.prompt)
+      )?.title
+      s.title = s.ownTitle ?? matched ?? s.userTexts.first?.slice(0, 80) ?? null
+      delete s.ownTitle
+      delete s.userTexts
     }
     out.sort((a, b) => b.mtime.localeCompare(a.mtime))
     return json(res, out)
