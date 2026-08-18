@@ -6,6 +6,7 @@
 
 export type Block = {
   type?: string
+  id?: string
   text?: string
   thinking?: string
   name?: string
@@ -239,6 +240,107 @@ export function describeKind(rec: WireRecord) {
       why: `The conversation itself: ${v.tools.length} tool definitions and ${v.system.length} system blocks.`,
     }
   return kind
+}
+
+// The conversation as a person would read it: who said what, in order,
+// with tool runs paired to their results. Derived from the normalised
+// view, so one walk serves both clients.
+export type TranscriptItem = {
+  kind: "user" | "assistant" | "thinking" | "tool" | "note"
+  // The spoken text, or the tool input for kind "tool".
+  text: string
+  name?: string
+  output?: string | null
+  is_error?: boolean
+}
+
+export function transcriptOf(view: CallView): TranscriptItem[] {
+  const out: TranscriptItem[] = []
+  const msgs = view.messages ?? []
+
+  // Pair every result with its call up front, in either client's shape.
+  const blockResults = new Map<string, { text: string; is_error: boolean }>()
+  const codexResults = new Map<string, string>()
+  for (const m of msgs) {
+    if (m.role === "tool" && m.call_id && typeof m.content === "string")
+      codexResults.set(m.call_id, m.content)
+    if (!Array.isArray(m.content)) continue
+    for (const c of m.content)
+      if (c.type === "tool_result" && c.tool_use_id)
+        blockResults.set(c.tool_use_id, { text: blockText(c.content), is_error: !!c.is_error })
+  }
+
+  const push = (item: TranscriptItem) => {
+    if (item.text || item.kind === "tool") out.push(item)
+  }
+
+  for (const m of msgs) {
+    // Codex shapes: a named assistant message is a tool call, a "tool"
+    // message is its result, "reasoning" is thinking.
+    if (m.role === "assistant" && m.name && typeof m.content === "string") {
+      push({
+        kind: "tool",
+        name: m.name,
+        text: m.content,
+        output: m.call_id ? (codexResults.get(m.call_id) ?? null) : null,
+      })
+      continue
+    }
+    if (m.role === "tool") continue
+    if (m.role === "reasoning") {
+      push({ kind: "thinking", text: blockText(m.content) })
+      continue
+    }
+
+    if (typeof m.content === "string") {
+      push({ kind: roleKind(m.role, m.content), text: m.content })
+      continue
+    }
+    if (!Array.isArray(m.content)) continue
+    for (const c of m.content) {
+      if (c.type === "text") push({ kind: roleKind(m.role, c.text ?? ""), text: c.text ?? "" })
+      else if (c.type === "thinking") push({ kind: "thinking", text: c.thinking ?? "" })
+      else if (c.type === "tool_use") {
+        const paired = blockResults.get(c.id ?? "")
+        push({
+          kind: "tool",
+          name: c.name ?? "tool",
+          text: JSON.stringify(c.input ?? {}, null, 2),
+          output: paired?.text ?? null,
+          is_error: paired?.is_error,
+        })
+      } else if (c.type === "tool_result") {
+        // Already paired with its call above.
+        continue
+      } else if (c.type === "image") {
+        push({ kind: "note", text: `[image ${c.source?.media_type ?? ""}]` })
+      } else push({ kind: "note", text: JSON.stringify(c, null, 2) })
+    }
+  }
+  return out
+}
+
+// Harness notes ride inside user messages. They are not the person talking,
+// so the transcript folds them away. Claude Code wraps them in tags; Codex
+// sends instructions and environment context as plain user text.
+const NOTE_PREFIXES = [
+  "<system-reminder>",
+  "<task-notification>",
+  "<INSTRUCTIONS>",
+  "<environment_context>",
+  "<user_instructions>",
+  "<turn_context>",
+  "<recommended_plugins>",
+  "<permissions",
+  "# AGENTS.md instructions",
+]
+
+function roleKind(role: string, text: string): TranscriptItem["kind"] {
+  if (role === "assistant") return "assistant"
+  if (role !== "user") return "note"
+  const t = text.trimStart()
+  if (NOTE_PREFIXES.some((p) => t.startsWith(p))) return "note"
+  return "user"
 }
 
 // A line diff over the common prefix and suffix. Enough to read a

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 
 import { Explain, SourceBadge } from "@/components/explain"
 import { Code, OutlinePane, type OutlineItem } from "@/components/outline-pane"
+import { Transcript } from "@/components/transcript"
 import { Badge } from "@/components/ui/badge"
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -19,6 +20,7 @@ import {
   replyText,
   systemTextOf,
   toolsText,
+  transcriptOf,
   viewOf,
   type WireRecord,
 } from "@/lib/wire"
@@ -58,6 +60,7 @@ export function CallDetail({ call, prev }: { call: WireRecord; prev: WireRecord 
   const prevTools = useMemo(() => new Set((prevView?.tools ?? []).map((t) => t.name)), [prevView])
 
   const calls = call.calls ?? []
+  const transcript = useMemo(() => transcriptOf(view), [call.id]) // eslint-disable-line react-hooks/exhaustive-deps
   const [callIdx, setCallIdx] = useState<string | null>(null)
   const [tool, setTool] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
@@ -143,8 +146,9 @@ export function CallDetail({ call, prev }: { call: WireRecord; prev: WireRecord 
         </div>
       </div>
 
-      <Tabs defaultValue="overview" className="flex min-h-0 flex-1 flex-col gap-0">
+      <Tabs defaultValue="chat" className="flex min-h-0 flex-1 flex-col gap-0">
         <TabsList className="mx-4 mt-3 shrink-0">
+          <TabsTrigger value="chat">Conversation</TabsTrigger>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="system">System ({sys.length})</TabsTrigger>
           <TabsTrigger value="tools">Tools ({tools.length})</TabsTrigger>
@@ -155,6 +159,17 @@ export function CallDetail({ call, prev }: { call: WireRecord; prev: WireRecord 
           <TabsTrigger value="diff">Diff</TabsTrigger>
           <TabsTrigger value="raw">Raw</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="chat" className="mt-3 flex min-h-0 flex-1 flex-col">
+          <PaneHeader derived>
+            The conversation rebuilt for reading: turns in full, thinking, tool runs and
+            harness notes folded. Click a folded row to open it. The Messages tab shows the
+            same content as sent.
+          </PaneHeader>
+          <ScrollArea className="min-h-0 flex-1">
+            <Transcript items={transcript} />
+          </ScrollArea>
+        </TabsContent>
 
         <TabsContent value="overview" className="mt-3 flex min-h-0 flex-1 flex-col">
           <PaneHeader derived>wiretap built this summary from the record.</PaneHeader>

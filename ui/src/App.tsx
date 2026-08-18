@@ -190,7 +190,13 @@ export function App() {
     setSeq(null)
     setDetail(null)
     api<CallSummary[]>("/session/" + encodeURIComponent(file))
-      .then(setCalls)
+      .then((list) => {
+        setCalls(list)
+        // Open on the newest conversation call — the one with tools — so a
+        // reader lands on the discussion, not on a background job.
+        const conv = [...list].reverse().find((c) => c.tools > 0) ?? list[list.length - 1]
+        if (conv) setSeq(conv.seq)
+      })
       .catch(() => setCalls([]))
   }
 
