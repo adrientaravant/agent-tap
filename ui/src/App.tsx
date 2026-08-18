@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
-import { MoonIcon, RefreshCwIcon, SunIcon, Trash2Icon } from "lucide-react"
+import { ArrowDownUpIcon, MoonIcon, RefreshCwIcon, SunIcon, Trash2Icon } from "lucide-react"
 
 import { CallDetail } from "@/components/call-detail"
-import { Explain } from "@/components/explain"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty"
@@ -30,7 +29,6 @@ import { cn } from "@/lib/utils"
 import {
   fmtBytes,
   fmtMs,
-  fmtNum,
   fmtTime,
   type CallSummary,
   type SessionInfo,
@@ -129,6 +127,9 @@ export function App() {
   const [calls, setCalls] = useState<CallSummary[]>([])
   const [seq, setSeq] = useState<number | null>(null)
   const [client, setClient] = useState<string>("all")
+  // The list reads top-down; a session can run to sixty calls, so newest
+  // first keeps the current turn in reach.
+  const [newestFirst, setNewestFirst] = useState(true)
   const [detail, setDetail] = useState<{
     call: WireRecord
     prev: WireRecord | null
@@ -319,49 +320,59 @@ export function App() {
         <ResizableHandle withHandle />
 
         <ResizablePanel defaultSize="22" minSize="15">
-          <ScrollArea className="h-full">
-            <div className="flex flex-col p-2">
-              {!session ? (
-                <p className="text-muted-foreground p-3 text-sm">Pick a session.</p>
-              ) : calls.length === 0 ? (
-                <p className="text-muted-foreground p-3 text-sm">No calls yet.</p>
-              ) : (
-                calls.map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => setSeq(c.seq)}
-                    className={cn(
-                      "hover:bg-accent flex flex-col gap-1 rounded-md px-2 py-2 text-left",
-                      seq === c.seq && "bg-accent"
-                    )}
-                  >
-                    <span className="flex items-center gap-2">
-                      <span className="font-mono text-xs">#{c.seq}</span>
-                      <span className="truncate font-mono text-xs">{c.model}</span>
-                      {c.status !== 200 ? (
-                        <Badge variant="destructive">{c.status}</Badge>
-                      ) : null}
-                    </span>
-                    <span className="text-muted-foreground font-mono text-[11px]">
-                      {fmtTime(c.ts)} · {c.tools} tools · {c.messages} msg · {fmtMs(c.took_ms)}
-                    </span>
-                    <span className="text-muted-foreground font-mono text-[11px]">
-                      <Explain term="cache_read">read {fmtNum(c.usage.cache_read)}</Explain>
-                      {" · "}
-                      <Explain term="cache_write">write {fmtNum(c.usage.cache_write)}</Explain>
-                      {" · "}
-                      <Explain term="output">out {fmtNum(c.usage.output)}</Explain>
-                    </span>
-                    {c.tool_calls.length ? (
-                      <span className="text-primary truncate font-mono text-[11px]">
-                        → {c.tool_calls.join(", ")}
+          <div className="flex h-full min-h-0 flex-col overflow-hidden">
+            {session ? (
+              <div className="flex shrink-0 items-center justify-between border-b px-3 py-1.5">
+                <span className="text-muted-foreground font-mono text-[11px]">
+                  {calls.length} calls
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground h-6 gap-1 px-2 text-[11px]"
+                  onClick={() => setNewestFirst((v) => !v)}
+                >
+                  <ArrowDownUpIcon className="size-3" />
+                  {newestFirst ? "newest first" : "oldest first"}
+                </Button>
+              </div>
+            ) : null}
+            <ScrollArea className="min-h-0 flex-1">
+              <div className="flex flex-col p-2">
+                {!session ? (
+                  <p className="text-muted-foreground p-3 text-sm">Pick a session.</p>
+                ) : calls.length === 0 ? (
+                  <p className="text-muted-foreground p-3 text-sm">No calls yet.</p>
+                ) : (
+                  (newestFirst ? [...calls].reverse() : calls).map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => setSeq(c.seq)}
+                      className={cn(
+                        "hover:bg-accent flex flex-col gap-1 rounded-md px-2 py-2 text-left",
+                        seq === c.seq && "bg-accent"
+                      )}
+                    >
+                      <span className="flex items-center gap-2 font-mono text-xs">
+                        <span>#{c.seq}</span>
+                        <span className="text-muted-foreground">
+                          {fmtTime(c.ts)} · {c.messages} msg · {fmtMs(c.took_ms)}
+                        </span>
+                        {c.status !== 200 ? (
+                          <Badge variant="destructive">{c.status}</Badge>
+                        ) : null}
                       </span>
-                    ) : null}
-                  </button>
-                ))
-              )}
-            </div>
-          </ScrollArea>
+                      {c.tool_calls.length ? (
+                        <span className="text-primary truncate font-mono text-[11px]">
+                          → {c.tool_calls.join(", ")}
+                        </span>
+                      ) : null}
+                    </button>
+                  ))
+                )}
+              </div>
+            </ScrollArea>
+          </div>
         </ResizablePanel>
 
         <ResizableHandle withHandle />

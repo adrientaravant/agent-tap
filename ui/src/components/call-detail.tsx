@@ -166,9 +166,9 @@ export function CallDetail({ call, prev }: { call: WireRecord; prev: WireRecord 
             harness notes folded. Click a folded row to open it. The Messages tab shows the
             same content as sent.
           </PaneHeader>
-          <ScrollArea className="min-h-0 flex-1">
+          <div className="min-h-0 flex-1">
             <Transcript items={transcript} />
-          </ScrollArea>
+          </div>
         </TabsContent>
 
         <TabsContent value="overview" className="mt-3 flex min-h-0 flex-1 flex-col">
