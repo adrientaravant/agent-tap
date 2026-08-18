@@ -25,7 +25,7 @@ No install needed — run it straight from GitHub:
 npx github:adrientaravant/agent-tap on
 ```
 
-Or clone it, which is better if you will run it often:
+Or clone it:
 
 ```bash
 git clone https://github.com/adrientaravant/agent-tap
@@ -36,7 +36,6 @@ cd agent-tap && npm link
 do the same thing. Nothing is installed for the proxy itself — it is one file of plain
 Node with no dependency. Needs **Node 20 or later**. macOS and Linux.
 
-Not on npm yet, so plain `npx agent-tap` will not find it.
 
 ## Use
 
@@ -46,6 +45,8 @@ claude                # …or codex, in a terminal
 agent-tap open        # read what it sent
 agent-tap off         # stop, and restore direct calls
 ```
+
+!! Codex threads started from the app works. For Claude it only works for threads started from the terminal.
 
 | Command | Does |
 | --- | --- |
