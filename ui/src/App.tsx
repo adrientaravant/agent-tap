@@ -461,6 +461,9 @@ export function App() {
                   (newestFirst ? [...calls].reverse() : calls).map((c) => (
                     <button
                       key={c.id}
+                      // Selection can come from elsewhere (following, the
+                      // Context timeline), so the list keeps it in view.
+                      ref={seq === c.seq ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
                       onClick={() => {
                         setSeq(c.seq)
                         // Picking an older call means the reader left the
