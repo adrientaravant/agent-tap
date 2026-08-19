@@ -200,7 +200,7 @@ export function CallDetail({
             same content as sent.
           </PaneHeader>
           <div className="min-h-0 flex-1">
-            <Transcript items={transcript} />
+            <Transcript items={transcript} conversation={call.kind === "session"} />
           </div>
         </TabsContent>
 

@@ -86,6 +86,10 @@ export const GLOSSARY: Record<string, { title: string; body: string }> = {
     title: "Ask an agent about this session",
     body: "Copies a prompt with the path of this session's record file. Paste it into Claude Code (or any agent that reads files) and ask questions — which skills ran, why a tool failed, what a turn added. The viewer itself holds no model and no key, so the questions run in the agent, on the raw file.",
   },
+  encrypted: {
+    title: "Encrypted thinking",
+    body: "Codex returns its reasoning encrypted, so the client can resend it on later calls without exposing the text. The plain reasoning never crosses the wire, so a capture cannot show it.",
+  },
   new_badge: {
     title: "New since the previous call",
     body: "This block was not present in the previous call of the same session. It is what this turn added.",
