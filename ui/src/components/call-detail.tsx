@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 
 import { Explain, SourceBadge } from "@/components/explain"
 import { Code, OutlinePane, type OutlineItem } from "@/components/outline-pane"
@@ -78,15 +78,26 @@ export function CallDetail({
 
   const calls = call.calls ?? []
   const transcript = useMemo(() => transcriptOf(view), [call.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [tab, setTab] = useState("chat")
   const [callIdx, setCallIdx] = useState<string | null>(null)
   const [tool, setTool] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [sysIdx, setSysIdx] = useState<string | null>(null)
+  // Set when a Usage chip jumps here: the invocation to land on once the
+  // target call has loaded.
+  const focusTool = useRef<string | null>(null)
   useEffect(() => {
     setTool(tools[0]?.name ?? null)
     setMsg(messages.length ? String(messages.length - 1) : null)
     setSysIdx(sys.length ? "0" : null)
-    setCallIdx(calls.length ? "0" : null)
+    let idx = 0
+    if (focusTool.current) {
+      const want = focusTool.current
+      const at = calls.findIndex((c) => c.name === want || c.input.includes(want))
+      if (at !== -1) idx = at
+      focusTool.current = null
+    }
+    setCallIdx(calls.length ? String(idx) : null)
     // A new call resets the outline selection.
   }, [call.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -187,7 +198,7 @@ export function CallDetail({
         </span>
       </div>
 
-      <Tabs defaultValue="chat" className="flex min-h-0 flex-1 flex-col gap-0">
+      <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col gap-0">
         <TabsList className="mx-4 mt-3 shrink-0">
           <TabsTrigger value="chat">Conversation</TabsTrigger>
           <TabsTrigger value="context">Context</TabsTrigger>
@@ -246,7 +257,20 @@ export function CallDetail({
             deduplicated, with the turns that used them. Click a turn to open it.
           </PaneHeader>
           <ScrollArea className="min-h-0 flex-1">
-            <UsagePane file={file} currentSeq={call.seq} onSelectSeq={onSelectSeq} />
+            <UsagePane
+              file={file}
+              currentSeq={call.seq}
+              onJump={(seq, name) => {
+                focusTool.current = name
+                setTab("calls")
+                if (seq === call.seq) {
+                  // Same call: the load effect will not rerun, select now.
+                  const at = calls.findIndex((c) => c.name === name || c.input.includes(name))
+                  if (at !== -1) setCallIdx(String(at))
+                  focusTool.current = null
+                } else onSelectSeq?.(seq)
+              }}
+            />
           </ScrollArea>
         </TabsContent>
 

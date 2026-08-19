@@ -28,12 +28,14 @@ const CHIP_CAP = 30
 
 function SeqChips({
   seqs,
+  name,
   current,
-  onSelectSeq,
+  onJump,
 }: {
   seqs: number[]
+  name: string
   current: number
-  onSelectSeq?: (seq: number) => void
+  onJump?: (seq: number, name: string) => void
 }) {
   const [all, setAll] = useState(false)
   const shown = all ? seqs : seqs.slice(0, CHIP_CAP)
@@ -42,7 +44,7 @@ function SeqChips({
       {shown.map((s) => (
         <button
           key={s}
-          onClick={() => onSelectSeq?.(s)}
+          onClick={() => onJump?.(s, name)}
           className={cn(
             "hover:bg-accent hover:text-foreground rounded border px-1 font-mono text-[10px]",
             s === current ? "text-foreground bg-accent" : "text-muted-foreground"
@@ -66,11 +68,11 @@ function SeqChips({
 function UsageRows({
   rows,
   current,
-  onSelectSeq,
+  onJump,
 }: {
   rows: UsageRow[]
   current: number
-  onSelectSeq?: (seq: number) => void
+  onJump?: (seq: number, name: string) => void
 }) {
   return (
     <div className="flex flex-col gap-1.5">
@@ -80,7 +82,7 @@ function UsageRows({
           <span className="text-muted-foreground w-10 shrink-0 text-right font-mono text-xs">
             {r.count}×
           </span>
-          <SeqChips seqs={r.seqs} current={current} onSelectSeq={onSelectSeq} />
+          <SeqChips seqs={r.seqs} name={r.name} current={current} onJump={onJump} />
         </div>
       ))}
     </div>
@@ -90,11 +92,11 @@ function UsageRows({
 export function UsagePane({
   file,
   currentSeq,
-  onSelectSeq,
+  onJump,
 }: {
   file: string
   currentSeq: number
-  onSelectSeq?: (seq: number) => void
+  onJump?: (seq: number, name: string) => void
 }) {
   const [usage, setUsage] = useState<Usage | null>(null)
   const [failed, setFailed] = useState(false)
@@ -134,7 +136,7 @@ export function UsagePane({
       <section className="flex flex-col gap-2">
         <h3 className="text-sm font-medium">Skills used ({usage.skills.length})</h3>
         {usage.skills.length ? (
-          <UsageRows rows={usage.skills} current={currentSeq} onSelectSeq={onSelectSeq} />
+          <UsageRows rows={usage.skills} current={currentSeq} onJump={onJump} />
         ) : (
           <p className="text-muted-foreground text-sm">None detected in this session.</p>
         )}
@@ -150,7 +152,7 @@ export function UsagePane({
                 <Badge variant="secondary">{m.count} calls</Badge>
               </div>
               <div className="pl-4">
-                <UsageRows rows={m.tools} current={currentSeq} onSelectSeq={onSelectSeq} />
+                <UsageRows rows={m.tools} current={currentSeq} onJump={onJump} />
               </div>
             </div>
           ))
@@ -161,7 +163,7 @@ export function UsagePane({
 
       <section className="flex flex-col gap-2">
         <h3 className="text-sm font-medium">Other tools used</h3>
-        <UsageRows rows={usage.builtin} current={currentSeq} onSelectSeq={onSelectSeq} />
+        <UsageRows rows={usage.builtin} current={currentSeq} onJump={onJump} />
       </section>
 
       {usage.loaded ? (

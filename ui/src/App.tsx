@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import {
   ArrowDownUpIcon,
   CheckIcon,
@@ -192,6 +192,12 @@ export function App() {
   // Following keeps the newest conversation call selected while a session
   // runs. Clicking an older call detaches; the toggle re-attaches.
   const [follow, setFollow] = useState(true)
+  // Read at the moment a poll completes: a click that detaches following
+  // must win over a refresh that was already in flight.
+  const followRef = useRef(follow)
+  useEffect(() => {
+    followRef.current = follow
+  }, [follow])
   // Title generators and status updaters live in their own files. They are
   // hidden by default so the list is one row per thread.
   const [showBackground, setShowBackground] = useState(false)
@@ -214,7 +220,7 @@ export function App() {
       try {
         const callList = await api<CallSummary[]>("/session/" + encodeURIComponent(session))
         setCalls(callList)
-        if (follow) {
+        if (followRef.current) {
           const conv = latestConv(callList)
           if (conv && conv.seq !== seq) setSeq(conv.seq)
         }
