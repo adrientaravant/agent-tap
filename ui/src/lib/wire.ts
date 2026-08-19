@@ -293,6 +293,30 @@ export function transcriptOf(view: CallView): TranscriptItem[] {
     if (item.text || item.kind === "tool") out.push(item)
   }
 
+  // A user message that carries a pasted file is wrapped by the harness: a
+  // "# Files mentioned by the user" preamble, image tags, and somewhere in
+  // between the words the person actually typed. Fold the scaffolding, keep
+  // the words spoken as a real turn.
+  const IMG = /<image\b[^>]*>[\s\S]*?<\/image>/g
+  // The file list must be consumed by the group itself: a leading \s* would
+  // eat the newlines and leave the "## file: path" lines in the spoken text.
+  const PREAMBLE = /# Files mentioned by the user:(?:\s*## [^\n]*)*/
+  const pushSpoken = (role: string, text: string) => {
+    if (role === "user" && text.trimStart().startsWith("# Files mentioned by the user")) {
+      const scaffold = [
+        ...(text.match(PREAMBLE) ?? []),
+        ...(text.match(IMG) ?? []),
+      ].join("\n\n")
+      const rest = text.replace(IMG, " ").replace(PREAMBLE, " ").trim()
+      if (rest) {
+        push({ kind: "note", text: scaffold })
+        push({ kind: "user", text: rest })
+        return
+      }
+    }
+    push({ kind: roleKind(role, text), text })
+  }
+
   for (const m of msgs) {
     // Codex shapes: a named assistant message is a tool call, a "tool"
     // message is its result, "reasoning" is thinking.
@@ -312,12 +336,12 @@ export function transcriptOf(view: CallView): TranscriptItem[] {
     }
 
     if (typeof m.content === "string") {
-      push({ kind: roleKind(m.role, m.content), text: m.content })
+      pushSpoken(m.role, m.content)
       continue
     }
     if (!Array.isArray(m.content)) continue
     for (const c of m.content) {
-      if (c.type === "text") push({ kind: roleKind(m.role, c.text ?? ""), text: c.text ?? "" })
+      if (c.type === "text") pushSpoken(m.role, c.text ?? "")
       else if (c.type === "thinking") push({ kind: "thinking", text: c.thinking ?? "" })
       else if (c.type === "tool_use") {
         const paired = blockResults.get(c.id ?? "")

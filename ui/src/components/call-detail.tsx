@@ -55,11 +55,13 @@ export function CallDetail({
     (usage.cache_read_input_tokens ?? 0) +
     (usage.cache_creation_input_tokens ?? 0)
   const promptShare = (n?: number) => (promptTotal ? ((n ?? 0) / promptTotal) * 100 : 0)
-  // The client can compact the history mid-session; the fullest call keeps
-  // the messages the newest one no longer carries.
-  const fullest = session.length
-    ? session.reduce((a, b) => (b.messages > a.messages ? b : a))
-    : null
+  // The client can compact the history mid-session. Only an EARLIER call can
+  // hold what this one no longer carries — a fuller call later in time is a
+  // different window, not this call's lost history.
+  const fullest = session.reduce<CallSummary | null>(
+    (a, b) => (b.seq < call.seq && b.messages > (a?.messages ?? 0) ? b : a),
+    null
+  )
   const kind = describeKind(call)
   const codex = (call.provider ?? "anthropic") !== "anthropic"
   const breaks = cacheBreakpoints(req)
