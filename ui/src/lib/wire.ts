@@ -134,6 +134,20 @@ export type SessionInfo = {
   // The thread name: the captured title-generator reply when the session
   // has one, otherwise the first thing the user typed.
   title: string | null
+  // "session" when the file holds a conversation; otherwise the background
+  // job it holds ("title", "state", "other").
+  kind?: string
+}
+
+// Codex names every shell run "exec", which makes a transcript unscannable.
+// Pull the command out of the input so the fold title says what ran.
+export function toolLabel(name: string, input: string) {
+  if (!/^(exec|shell|bash|run)/i.test(name)) return name
+  const m =
+    /cmd:\s*"((?:[^"\\]|\\.)*)"/.exec(input) ?? /"command"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(input)
+  if (!m) return name
+  const cmd = m[1].replace(/\\n/g, " ").replace(/\\"/g, '"').replace(/\s+/g, " ").trim()
+  return cmd ? `${name} · ${cmd.slice(0, 48)}` : name
 }
 
 export function viewOf(rec: WireRecord): CallView {

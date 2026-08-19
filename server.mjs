@@ -849,8 +849,14 @@ async function viewer(req, res, url) {
         const first = recs[0]
         let ownTitle = null
         const entries = []
+        // A file holding no conversation call is a background job; its kind
+        // names which one, so the list can group it away.
+        let fileKind = 'other'
         for (const rec of recs) {
-          if (kindOf(rec) !== 'title') continue
+          const k = kindOf(rec)
+          if (k === 'session') fileKind = 'session'
+          else if (fileKind !== 'session' && k !== 'other') fileKind = k
+          if (k !== 'title') continue
           const t = parsedTitle(rec)
           ownTitle ??= t
           const p = embeddedPrompt(rec)
@@ -861,6 +867,7 @@ async function viewer(req, res, url) {
           started: first?.ts ?? null,
           provider: first?.provider ?? 'anthropic',
           model: recs.at(-1)?.model ?? null,
+          kind: fileKind,
           ownTitle,
           titleEntries: entries,
           userTexts: userTextsOf(recs),
@@ -876,6 +883,7 @@ async function viewer(req, res, url) {
         started: info.started,
         provider: info.provider,
         model: info.model,
+        kind: info.kind,
         ownTitle: info.ownTitle,
         userTexts: info.userTexts,
       })

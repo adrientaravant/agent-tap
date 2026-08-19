@@ -4,6 +4,7 @@ import {
   CheckIcon,
   CopyIcon,
   MoonIcon,
+  RadioIcon,
   RefreshCwIcon,
   SunIcon,
   Trash2Icon,
@@ -144,6 +145,10 @@ const CLIENTS: Record<string, { label: string; short: string }> = {
 }
 const clientOf = (p?: string) => CLIENTS[p ?? "anthropic"] ?? CLIENTS.anthropic
 
+// The newest call that carries the conversation — the one a reader wants.
+const latestConv = (list: CallSummary[]) =>
+  [...list].reverse().find((c) => c.tools > 0) ?? list[list.length - 1]
+
 // The file name is <date>_<session id>, and for Codex it also carries the
 // client prefix. Neither is worth reading, so show the tail only.
 function shortId(file: string) {
@@ -184,6 +189,12 @@ export function App() {
   // The list reads top-down; a session can run to sixty calls, so newest
   // first keeps the current turn in reach.
   const [newestFirst, setNewestFirst] = useState(true)
+  // Following keeps the newest conversation call selected while a session
+  // runs. Clicking an older call detaches; the toggle re-attaches.
+  const [follow, setFollow] = useState(true)
+  // Title generators and status updaters live in their own files. They are
+  // hidden by default so the list is one row per thread.
+  const [showBackground, setShowBackground] = useState(false)
   const [dir, setDir] = useState<string | null>(null)
   useEffect(() => {
     api<{ dir: string }>("/info")
@@ -201,7 +212,12 @@ export function App() {
     setSessions(list)
     if (session) {
       try {
-        setCalls(await api<CallSummary[]>("/session/" + encodeURIComponent(session)))
+        const callList = await api<CallSummary[]>("/session/" + encodeURIComponent(session))
+        setCalls(callList)
+        if (follow) {
+          const conv = latestConv(callList)
+          if (conv && conv.seq !== seq) setSeq(conv.seq)
+        }
       } catch {
         setSession(null)
         setCalls([])
@@ -209,7 +225,7 @@ export function App() {
         setDetail(null)
       }
     }
-  }, [session])
+  }, [session, follow, seq])
 
   useEffect(() => {
     refresh().catch(() => {})
@@ -250,16 +266,25 @@ export function App() {
     setSession(file)
     setSeq(null)
     setDetail(null)
+    setFollow(true)
     api<CallSummary[]>("/session/" + encodeURIComponent(file))
       .then((list) => {
         setCalls(list)
         // Open on the newest conversation call — the one with tools — so a
         // reader lands on the discussion, not on a background job.
-        const conv = [...list].reverse().find((c) => c.tools > 0) ?? list[list.length - 1]
+        const conv = latestConv(list)
         if (conv) setSeq(conv.seq)
       })
       .catch(() => setCalls([]))
   }
+
+  // One row per thread by default; the background files stay reachable.
+  const visible = (sessions ?? []).filter(
+    (s) => showBackground || (s.kind ?? "session") === "session"
+  )
+  const bgCount = (sessions?.length ?? 0) - (sessions ?? []).filter(
+    (s) => (s.kind ?? "session") === "session"
+  ).length
 
   return (
     <div className="bg-background text-foreground flex h-svh flex-col">
@@ -296,16 +321,25 @@ export function App() {
             <Tabs value={client} onValueChange={setClient} className="shrink-0 p-2 pb-0">
               <TabsList className="w-full">
                 <TabsTrigger value="all">
-                  All ({sessions?.length ?? 0})
+                  All ({visible.length})
                 </TabsTrigger>
                 <TabsTrigger value="anthropic">
-                  Claude ({(sessions ?? []).filter((s) => (s.provider ?? "anthropic") === "anthropic").length})
+                  Claude ({visible.filter((s) => (s.provider ?? "anthropic") === "anthropic").length})
                 </TabsTrigger>
                 <TabsTrigger value="codex">
-                  Codex ({(sessions ?? []).filter((s) => s.provider === "codex").length})
+                  Codex ({visible.filter((s) => s.provider === "codex").length})
                 </TabsTrigger>
               </TabsList>
             </Tabs>
+            {bgCount > 0 ? (
+              <button
+                onClick={() => setShowBackground((v) => !v)}
+                className="text-muted-foreground hover:text-foreground shrink-0 px-4 pt-1.5 text-left font-mono text-[11px]"
+              >
+                {showBackground ? "hide" : "show"} {bgCount} background job
+                {bgCount > 1 ? "s" : ""} (titles, status updates)
+              </button>
+            ) : null}
             <ScrollArea className="min-h-0 flex-1">
             <div className="flex flex-col p-2">
               {sessions == null ? (
@@ -323,7 +357,7 @@ export function App() {
                   </EmptyHeader>
                 </Empty>
               ) : (
-                sessions
+                visible
                   .filter(
                     (s) => client === "all" || (s.provider ?? "anthropic") === client
                   )
@@ -386,6 +420,25 @@ export function App() {
                 <span className="text-muted-foreground mr-auto font-mono text-[11px]">
                   {calls.length} calls
                 </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    "h-6 gap-1 px-2 text-[11px]",
+                    follow ? "text-primary" : "text-muted-foreground"
+                  )}
+                  onClick={() => {
+                    const next = !follow
+                    setFollow(next)
+                    if (next) {
+                      const conv = latestConv(calls)
+                      if (conv) setSeq(conv.seq)
+                    }
+                  }}
+                >
+                  <RadioIcon className="size-3" />
+                  {follow ? "following" : "follow"}
+                </Button>
                 <AskAgentButton dir={dir} file={session} />
                 <Button
                   variant="ghost"
@@ -408,7 +461,12 @@ export function App() {
                   (newestFirst ? [...calls].reverse() : calls).map((c) => (
                     <button
                       key={c.id}
-                      onClick={() => setSeq(c.seq)}
+                      onClick={() => {
+                        setSeq(c.seq)
+                        // Picking an older call means the reader left the
+                        // live edge; stop following until asked again.
+                        setFollow(latestConv(calls)?.seq === c.seq)
+                      }}
                       className={cn(
                         "hover:bg-accent flex flex-col gap-1 rounded-md px-2 py-2 text-left",
                         seq === c.seq && "bg-accent"

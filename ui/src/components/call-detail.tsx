@@ -20,6 +20,7 @@ import {
   paramsText,
   replyText,
   systemTextOf,
+  toolLabel,
   toolsText,
   transcriptOf,
   viewOf,
@@ -376,7 +377,7 @@ export function CallDetail({
           <OutlinePane
             items={calls.map((c) => ({
               id: String(c.index),
-              label: `${c.index + 1}. ${c.name}`,
+              label: `${c.index + 1}. ${toolLabel(c.name, c.input)}`,
               hint: c.input.slice(0, 90).replace(/\s+/g, " "),
               tags: c.is_error ? ["failed"] : [],
               search: c.name + " " + c.input + " " + (c.output ?? ""),

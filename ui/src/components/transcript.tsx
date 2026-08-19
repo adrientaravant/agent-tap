@@ -20,7 +20,7 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller"
-import type { TranscriptItem } from "@/lib/wire"
+import { toolLabel, type TranscriptItem } from "@/lib/wire"
 
 // The conversation the way a person reads a chat: spoken turns as bubbles,
 // machinery folded into marker rows. Everything here is rebuilt from the
@@ -100,7 +100,9 @@ export function Transcript({ items }: { items: TranscriptItem[] }) {
       </Empty>
     )
   return (
-    <MessageScrollerProvider>
+    // autoScroll opens the thread at its live edge and follows growth, which
+    // is where a captured conversation is read from; scrolling up detaches.
+    <MessageScrollerProvider autoScroll>
       <MessageScroller>
         <MessageScrollerViewport>
           <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-3 p-4">
@@ -144,7 +146,7 @@ export function Transcript({ items }: { items: TranscriptItem[] }) {
                   <MessageScrollerItem key={i} messageId={String(i)}>
                     <Fold
                       icon={<WrenchIcon />}
-                      title={item.name ?? "tool"}
+                      title={toolLabel(item.name ?? "tool", item.text)}
                       hint={oneLine(item.text)}
                       tags={item.is_error ? <Badge variant="destructive">failed</Badge> : null}
                     >
