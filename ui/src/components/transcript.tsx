@@ -10,6 +10,7 @@ import {
 
 import { Explain } from "@/components/explain"
 import { Code } from "@/components/outline-pane"
+import { SmartCode } from "@/components/smart-code"
 import { Badge } from "@/components/ui/badge"
 import { Bubble, BubbleContent } from "@/components/ui/bubble"
 import { Button } from "@/components/ui/button"
@@ -255,16 +256,16 @@ export function Transcript({
                             <h4 className="text-muted-foreground text-xs tracking-wide uppercase">
                               Input
                             </h4>
-                            <Code>{item.text || "(none)"}</Code>
+                            <SmartCode>{item.text || "(none)"}</SmartCode>
                           </div>
                           <div className="flex flex-col gap-1">
                             <h4 className="text-muted-foreground text-xs tracking-wide uppercase">
                               Result
                             </h4>
-                            <Code>
+                            <SmartCode>
                               {item.output ??
                                 "(no result in this request — the call was still running)"}
-                            </Code>
+                            </SmartCode>
                           </div>
                         </Fold>
                       </MessageScrollerItem>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 
 import { Explain, SourceBadge } from "@/components/explain"
 import { Code, OutlinePane, type OutlineItem } from "@/components/outline-pane"
+import { SmartCode } from "@/components/smart-code"
 import { Transcript } from "@/components/transcript"
 import { UsagePane } from "@/components/usage-pane"
 import { Badge } from "@/components/ui/badge"
@@ -477,11 +478,13 @@ export function CallDetail({
                 </div>
                 <div className="flex flex-col gap-1">
                   <h4 className="text-muted-foreground text-xs tracking-wide uppercase">Input</h4>
-                  <Code>{selectedCall.input || "(none)"}</Code>
+                  <SmartCode>{selectedCall.input || "(none)"}</SmartCode>
                 </div>
                 <div className="flex flex-col gap-1">
                   <h4 className="text-muted-foreground text-xs tracking-wide uppercase">Result</h4>
-                  <Code>{selectedCall.output ?? "(no result in this request — the call was still running)"}</Code>
+                  <SmartCode>
+                    {selectedCall.output ?? "(no result in this request — the call was still running)"}
+                  </SmartCode>
                 </div>
               </div>
             ) : (
@@ -598,7 +601,7 @@ function ShareRow({ label, chars, total, hint }: { label: string; chars: number;
   const pct = total ? (chars / total) * 100 : 0
   return (
     <div className="flex items-center gap-2 font-mono text-xs">
-      <span className="w-40 shrink-0">{label}</span>
+      <span title={label} className="w-64 min-w-0 shrink-0 truncate">{label}</span>
       <span className="text-muted-foreground w-24 shrink-0 text-right">
         {chars.toLocaleString("en-US")} ch
       </span>
@@ -683,12 +686,13 @@ function ContextPane({
       <section className="flex flex-col gap-2">
         <h3 className="text-sm font-medium">Growth over the session</h3>
         <p className="text-muted-foreground text-xs">
-          Prompt tokens the API reported per call — new input, cache reads and cache
-          writes together. The bar that keeps growing is the conversation carrying its
-          own history forward. Click a row to open that call.
+          Prompt tokens the API reported per conversation call — new input, cache
+          reads and cache writes together; background jobs are left out. The bar that
+          keeps growing is the conversation carrying its own history forward. Click a
+          row to open that call.
         </p>
         <div className="flex flex-col gap-1">
-          {session.map((c) => (
+          {session.filter((x) => (x.kind ?? "session") === "session").map((c) => (
             <button
               key={c.id}
               onClick={() => onSelectSeq?.(c.seq)}

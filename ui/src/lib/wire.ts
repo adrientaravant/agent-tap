@@ -104,6 +104,7 @@ export type WireRecord = {
 export type CallSummary = {
   id: string
   provider?: string
+  kind?: string
   seq: number
   ts: string
   model: string | null
