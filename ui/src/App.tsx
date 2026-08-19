@@ -202,6 +202,10 @@ export function App() {
   // hidden by default so the list is one row per thread.
   const [showBackground, setShowBackground] = useState(false)
   const [dir, setDir] = useState<string | null>(null)
+  // The rail scrolls to the selected tick ONCE per selection change. The
+  // ref callback re-runs on every poll render, and re-scrolling there would
+  // yank the rail back while the user is scrolling it.
+  const railScrolledFor = useRef<number | null>(null)
   useEffect(() => {
     api<{ dir: string }>("/info")
       .then((i) => setDir(i.dir))
@@ -480,10 +484,16 @@ export function App() {
                             c.status !== 200 ? ` · ${c.status}` : ""
                           }${c.tool_calls.length ? `\n→ ${c.tool_calls.join(", ").slice(0, 200)}` : ""}`}
                           // Selection can come from elsewhere (following, the
-                          // Context timeline), so the rail keeps it in view.
+                          // Context timeline), so the rail brings it into
+                          // view — once per selection, never on a poll.
                           ref={
                             selected
-                              ? (el) => el?.scrollIntoView({ block: "nearest" })
+                              ? (el) => {
+                                  if (el && railScrolledFor.current !== c.seq) {
+                                    railScrolledFor.current = c.seq
+                                    el.scrollIntoView({ block: "nearest" })
+                                  }
+                                }
                               : undefined
                           }
                           onClick={() => {
