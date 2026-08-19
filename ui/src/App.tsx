@@ -419,10 +419,10 @@ export function App() {
 
         <ResizableHandle withHandle />
 
-        <ResizablePanel defaultSize="22" minSize="15">
+        <ResizablePanel defaultSize="13" minSize="8">
           <div className="flex h-full min-h-0 flex-col overflow-hidden">
             {session ? (
-              <div className="flex shrink-0 items-center gap-1 border-b px-3 py-1.5">
+              <div className="flex shrink-0 flex-wrap items-center gap-1 border-b px-3 py-1.5">
                 <span className="text-muted-foreground mr-auto font-mono text-[11px]">
                   {calls.length} calls
                 </span>
@@ -458,45 +458,69 @@ export function App() {
               </div>
             ) : null}
             <ScrollArea className="min-h-0 flex-1">
-              <div className="flex flex-col p-2">
+              {/* A timeline rail, not a table: one tick per call, its length
+                  the size of the conversation it carried, background jobs as
+                  faint dots. Everything to read lives on hover and in the
+                  detail pane — this column only keeps the order of moments. */}
+              <div className="flex flex-col px-2 py-3">
                 {!session ? (
                   <p className="text-muted-foreground p-3 text-sm">Pick a session.</p>
                 ) : calls.length === 0 ? (
                   <p className="text-muted-foreground p-3 text-sm">No calls yet.</p>
                 ) : (
-                  (newestFirst ? [...calls].reverse() : calls).map((c) => (
-                    <button
-                      key={c.id}
-                      // Selection can come from elsewhere (following, the
-                      // Context timeline), so the list keeps it in view.
-                      ref={seq === c.seq ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
-                      onClick={() => {
-                        setSeq(c.seq)
-                        // Picking an older call means the reader left the
-                        // live edge; stop following until asked again.
-                        setFollow(latestConv(calls)?.seq === c.seq)
-                      }}
-                      className={cn(
-                        "hover:bg-accent flex flex-col gap-1 rounded-md px-2 py-2 text-left",
-                        seq === c.seq && "bg-accent"
-                      )}
-                    >
-                      <span className="flex items-center gap-2 font-mono text-xs">
-                        <span>#{c.seq}</span>
-                        <span className="text-muted-foreground">
-                          {fmtTime(c.ts)} · {c.messages} msg · {fmtMs(c.took_ms)}
-                        </span>
-                        {c.status !== 200 ? (
-                          <Badge variant="destructive">{c.status}</Badge>
-                        ) : null}
-                      </span>
-                      {c.tool_calls.length ? (
-                        <span className="text-primary truncate font-mono text-[11px]">
-                          → {c.tool_calls.join(", ")}
-                        </span>
-                      ) : null}
-                    </button>
-                  ))
+                  (() => {
+                    const maxMsg = Math.max(1, ...calls.map((c) => c.messages))
+                    return (newestFirst ? [...calls].reverse() : calls).map((c) => {
+                      const conv = (c.kind ?? "session") === "session"
+                      const selected = seq === c.seq
+                      return (
+                        <button
+                          key={c.id}
+                          title={`#${c.seq} · ${fmtTime(c.ts)} · ${c.messages} msg · ${fmtMs(c.took_ms)}${
+                            c.status !== 200 ? ` · ${c.status}` : ""
+                          }${c.tool_calls.length ? `\n→ ${c.tool_calls.join(", ").slice(0, 200)}` : ""}`}
+                          // Selection can come from elsewhere (following, the
+                          // Context timeline), so the rail keeps it in view.
+                          ref={
+                            selected
+                              ? (el) => el?.scrollIntoView({ block: "nearest" })
+                              : undefined
+                          }
+                          onClick={() => {
+                            setSeq(c.seq)
+                            // Picking an older call means the reader left the
+                            // live edge; stop following until asked again.
+                            setFollow(latestConv(calls)?.seq === c.seq)
+                          }}
+                          className="group flex h-[13px] shrink-0 items-center gap-1.5 px-1"
+                        >
+                          <span
+                            className={cn(
+                              "rounded-full transition-colors",
+                              c.status !== 200
+                                ? "bg-destructive"
+                                : selected
+                                  ? "bg-foreground"
+                                  : conv
+                                    ? "bg-muted-foreground/45 group-hover:bg-foreground/80"
+                                    : "bg-muted-foreground/20 group-hover:bg-foreground/50",
+                              selected ? "h-[3px]" : "h-[2px]"
+                            )}
+                            style={{
+                              width: conv
+                                ? `${Math.max(14, (c.messages / maxMsg) * 100)}%`
+                                : "6px",
+                            }}
+                          />
+                          {selected ? (
+                            <span className="text-foreground shrink-0 font-mono text-[10px]">
+                              #{c.seq}
+                            </span>
+                          ) : null}
+                        </button>
+                      )
+                    })
+                  })()
                 )}
               </div>
             </ScrollArea>
