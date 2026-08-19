@@ -59,9 +59,12 @@ function livePid() {
 
 function reachable(timeout = 800) {
   return new Promise((resolve) => {
-    const req = http.get({ host: HOST, port: PORT, path: '/__wire/api/sessions', timeout }, (res) => {
+    // /api/info answers from memory. The sessions listing parses every
+    // record file and can take longer than this whole probe.
+    const req = http.get({ host: HOST, port: PORT, path: '/__wire/api/info', timeout }, (res) => {
       res.resume()
-      resolve(res.statusCode === 200)
+      // An older server has no /api/info and answers 404 — still alive.
+      resolve(res.statusCode === 200 || res.statusCode === 404)
     })
     req.on('error', () => resolve(false))
     req.on('timeout', () => {

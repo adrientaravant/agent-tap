@@ -768,8 +768,11 @@ function userTextsOf(recs) {
     if (!first && !HARNESS_PREFIXES.some((p) => text.startsWith(p)))
       first = text.replace(/\s+/g, ' ').slice(0, 200)
   }
-  return { first, all: normPrompt(all.join('\n'), Infinity) }
+  return { first, all: normPrompt(all.join('\n'), 200_000) }
 }
+
+// Per-file summary for the sessions listing, keyed by mtime and size.
+const sessionCache = new Map()
 
 // A Codex title call runs in its own thread, so it cannot be joined to the
 // conversation by any id. It does carry the prompt it names, after a
@@ -834,28 +837,50 @@ async function viewer(req, res, url) {
     const titleEntries = []
     for (const f of files) {
       const st = await fsp.stat(path.join(DATA_DIR, f))
-      const recs = await readSession(f).catch(() => [])
-      const first = recs[0]
-      let ownTitle = null
-      for (const rec of recs) {
-        if (kindOf(rec) !== 'title') continue
-        const t = parsedTitle(rec)
-        ownTitle ??= t
-        const p = embeddedPrompt(rec)
-        if (t && p) titleEntries.push({ prompt: normPrompt(p), title: t })
+      // The viewer polls this listing every few seconds and a session file
+      // is tens of megabytes, so the parsed summary is cached per file and
+      // recomputed only when the file changes.
+      const cached = sessionCache.get(f)
+      let info
+      if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size) {
+        info = cached.info
+      } else {
+        const recs = await readSession(f).catch(() => [])
+        const first = recs[0]
+        let ownTitle = null
+        const entries = []
+        for (const rec of recs) {
+          if (kindOf(rec) !== 'title') continue
+          const t = parsedTitle(rec)
+          ownTitle ??= t
+          const p = embeddedPrompt(rec)
+          if (t && p) entries.push({ prompt: normPrompt(p), title: t })
+        }
+        info = {
+          calls: recs.length,
+          started: first?.ts ?? null,
+          provider: first?.provider ?? 'anthropic',
+          model: recs.at(-1)?.model ?? null,
+          ownTitle,
+          titleEntries: entries,
+          userTexts: userTextsOf(recs),
+        }
+        sessionCache.set(f, { mtimeMs: st.mtimeMs, size: st.size, info })
       }
+      titleEntries.push(...info.titleEntries)
       out.push({
         file: f,
-        calls: recs.length,
+        calls: info.calls,
         bytes: st.size,
         mtime: st.mtime.toISOString(),
-        started: first?.ts ?? null,
-        provider: first?.provider ?? 'anthropic',
-        model: recs.at(-1)?.model ?? null,
-        ownTitle,
-        userTexts: userTextsOf(recs),
+        started: info.started,
+        provider: info.provider,
+        model: info.model,
+        ownTitle: info.ownTitle,
+        userTexts: info.userTexts,
       })
     }
+    for (const f of sessionCache.keys()) if (!files.includes(f)) sessionCache.delete(f)
     for (const s of out) {
       // A Codex title is generated from one user prompt of the thread, not
       // always the first, and the prompt can sit behind a harness preamble —
