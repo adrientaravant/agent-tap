@@ -55,6 +55,11 @@ export function CallDetail({
     (usage.cache_read_input_tokens ?? 0) +
     (usage.cache_creation_input_tokens ?? 0)
   const promptShare = (n?: number) => (promptTotal ? ((n ?? 0) / promptTotal) * 100 : 0)
+  // The client can compact the history mid-session; the fullest call keeps
+  // the messages the newest one no longer carries.
+  const fullest = session.length
+    ? session.reduce((a, b) => (b.messages > a.messages ? b : a))
+    : null
   const kind = describeKind(call)
   const codex = (call.provider ?? "anthropic") !== "anthropic"
   const breaks = cacheBreakpoints(req)
@@ -199,6 +204,20 @@ export function CallDetail({
             harness notes folded. Click a folded row to open it. The Messages tab shows the
             same content as sent.
           </PaneHeader>
+          {fullest && fullest.seq !== call.seq && fullest.messages > messages.length + 20 ? (
+            <div className="text-muted-foreground flex shrink-0 items-center gap-1 border-b px-4 py-1.5 text-xs">
+              <Explain term="compaction">
+                The history was compacted: this call carries {messages.length} messages, call #
+                {fullest.seq} still holds {fullest.messages}.
+              </Explain>
+              <button
+                onClick={() => onSelectSeq?.(fullest.seq)}
+                className="text-primary underline underline-offset-4"
+              >
+                Open #{fullest.seq}
+              </button>
+            </div>
+          ) : null}
           <div className="min-h-0 flex-1">
             <Transcript items={transcript} conversation={call.kind === "session"} />
           </div>

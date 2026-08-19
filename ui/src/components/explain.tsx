@@ -86,6 +86,10 @@ export const GLOSSARY: Record<string, { title: string; body: string }> = {
     title: "Ask an agent about this session",
     body: "Copies a prompt with the path of this session's record file. Paste it into Claude Code (or any agent that reads files) and ask questions — which skills ran, why a tool failed, what a turn added. The viewer itself holds no model and no key, so the questions run in the agent, on the raw file.",
   },
+  compaction: {
+    title: "Compacted history",
+    body: "When a conversation gets long, the client summarises the old turns and continues with a shorter history — so newer calls carry fewer messages than older ones. Nothing was lost in the capture: the calls made before the compaction still hold the full history.",
+  },
   encrypted: {
     title: "Encrypted thinking",
     body: "Codex returns its reasoning encrypted, so the client can resend it on later calls without exposing the text. The plain reasoning never crosses the wire, so a capture cannot show it.",
