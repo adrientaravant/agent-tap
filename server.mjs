@@ -779,6 +779,139 @@ function userTextsOf(recs) {
 
 // Per-file summary for the sessions listing, keyed by mtime and size.
 const sessionCache = new Map()
+const usageCache = new Map()
+
+// ------------------------------------------------------------------ usage
+//
+// What a session invoked — skills, MCP tools, built-ins — and what was
+// loaded. Claude names its tools on the wire; Codex hides MCP calls and
+// skill reads inside exec code, so those are found by pattern and the
+// result is a floor, not an exact count. Every call resends the history,
+// so invocations are deduplicated by their tool-call id.
+
+const CODEX_MCP = /\btools\.mcp__([a-zA-Z0-9]+(?:_[a-zA-Z0-9]+)*?)__(\w+)/g
+const CODEX_SKILL = /\.(?:codex|claude)\/skills\/([A-Za-z0-9._-]+)/g
+
+function usageOf(recs) {
+  // key → { cat, server?, name, seq }
+  const inv = new Map()
+  let lastSession = null
+  for (const rec of recs) {
+    if (kindOf(rec) !== 'session') continue
+    lastSession = rec
+    const view = viewOf(rec)
+    if ((rec.provider ?? 'anthropic') === 'anthropic') {
+      for (const m of view.messages) {
+        for (const c of Array.isArray(m.content) ? m.content : []) {
+          if (c?.type !== 'tool_use' || !c.id || inv.has(c.id)) continue
+          const mm = /^mcp__(.+?)__(.+)$/.exec(c.name || '')
+          if (c.name === 'Skill')
+            inv.set(c.id, { cat: 'skill', name: String(c.input?.skill ?? '(unknown)'), seq: rec.seq })
+          else if (mm) inv.set(c.id, { cat: 'mcp', server: mm[1], name: mm[2], seq: rec.seq })
+          else inv.set(c.id, { cat: 'builtin', name: c.name || 'tool', seq: rec.seq })
+        }
+      }
+    } else {
+      for (const m of view.messages) {
+        if (m.role !== 'assistant' || !m.name || typeof m.content !== 'string') continue
+        const id = m.call_id || `${m.name}:${m.content.slice(0, 60)}`
+        if (!inv.has(id)) inv.set(id, { cat: 'builtin', name: m.name, seq: rec.seq })
+        let i = 0
+        for (const hit of m.content.matchAll(CODEX_MCP)) {
+          const key = `${id}#m${i++}`
+          if (!inv.has(key)) inv.set(key, { cat: 'mcp', server: hit[1], name: hit[2], seq: rec.seq })
+        }
+        i = 0
+        for (const hit of m.content.matchAll(CODEX_SKILL)) {
+          const key = `${id}#s${i++}:${hit[1]}`
+          if (!inv.has(key)) inv.set(key, { cat: 'skill', name: hit[1], seq: rec.seq })
+        }
+      }
+    }
+  }
+
+  // Aggregate name → { count, seqs }, seqs unique and ordered.
+  const agg = () => new Map()
+  const add = (map, key, seq) => {
+    const e = map.get(key) ?? { count: 0, seqs: [] }
+    e.count++
+    if (e.seqs[e.seqs.length - 1] !== seq) e.seqs.push(seq)
+    map.set(key, e)
+  }
+  const skills = agg()
+  const builtin = agg()
+  const mcp = new Map() // server → Map(tool → entry)
+  for (const e of [...inv.values()].sort((a, b) => a.seq - b.seq)) {
+    if (e.cat === 'skill') add(skills, e.name, e.seq)
+    else if (e.cat === 'builtin') add(builtin, e.name, e.seq)
+    else {
+      if (!mcp.has(e.server)) mcp.set(e.server, agg())
+      add(mcp.get(e.server), e.name, e.seq)
+    }
+  }
+  const rows = (map) =>
+    [...map.entries()]
+      .map(([name, e]) => ({ name, count: e.count, seqs: e.seqs }))
+      .sort((a, b) => b.count - a.count)
+
+  // What the last conversation call offered, straight from the wire.
+  let loaded = null
+  if (lastSession) {
+    const tools = viewOf(lastSession).tools
+    const servers = new Set()
+    const other = []
+    for (const t of tools) {
+      const mm = /^mcp__(.+?)__/.exec(t.name || '')
+      if (mm) servers.add(mm[1])
+      else other.push(t.name)
+    }
+    loaded = {
+      tools_total: tools.length,
+      mcp_servers: [...servers],
+      builtin: other,
+      skills: loadedSkills(lastSession),
+    }
+  }
+
+  return {
+    provider: recs[0]?.provider ?? 'anthropic',
+    approximate: (recs[0]?.provider ?? 'anthropic') !== 'anthropic',
+    skills: rows(skills),
+    mcp: [...mcp.entries()]
+      .map(([server, tools]) => {
+        const t = rows(tools)
+        return {
+          server,
+          count: t.reduce((n, x) => n + x.count, 0),
+          tools: t,
+        }
+      })
+      .sort((a, b) => b.count - a.count),
+    builtin: rows(builtin),
+    loaded,
+  }
+}
+
+// The skills offered to the agent, parsed from the listing text the harness
+// puts in the prompt. A heuristic: when the block is absent, say so rather
+// than guess.
+function loadedSkills(rec) {
+  const view = viewOf(rec)
+  const texts = [
+    ...view.system.map((b) => b.text || ''),
+    ...view.messages.map((m) =>
+      typeof m.content === 'string'
+        ? m.content
+        : Array.isArray(m.content)
+          ? m.content.map((c) => c?.text || '').join('\n')
+          : ''
+    ),
+  ].join('\n')
+  const m = /skills are available[\s\S]{0,120}?:\s*((?:\n+\s*-\s+[^\n]+)+)/.exec(texts)
+  if (!m) return null
+  const names = [...m[1].matchAll(/-\s+([^\s:]+)/g)].map((x) => x[1])
+  return names.length ? [...new Set(names)] : null
+}
 
 // A Codex title call runs in its own thread, so it cannot be joined to the
 // conversation by any id. It does carry the prompt it names, after a
@@ -930,6 +1063,28 @@ async function viewer(req, res, url) {
   // to an agent. A path, not a payload: nothing is read here.
   if (rest === '/api/info') {
     return json(res, { dir: DATA_DIR })
+  }
+
+  // Which skills and tools a session used, and what was loaded. Derived on
+  // read and cached per file like the listing.
+  const mu = rest.match(/^\/api\/usage\/(.+)$/)
+  if (mu && req.method !== 'DELETE') {
+    const name = safeName(decodeURIComponent(mu[1]))
+    if (!name) return json(res, { error: 'bad name' }, 400)
+    let st
+    try {
+      st = await fsp.stat(path.join(DATA_DIR, name))
+    } catch {
+      return json(res, { error: 'not found' }, 404)
+    }
+    const cached = usageCache.get(name)
+    if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size)
+      return json(res, cached.data)
+    const recs = await readSession(name).catch(() => null)
+    if (!recs) return json(res, { error: 'not found' }, 404)
+    const data = usageOf(recs)
+    usageCache.set(name, { mtimeMs: st.mtimeMs, size: st.size, data })
+    return json(res, data)
   }
 
   if (rest === '/api/sessions' && req.method === 'DELETE') {

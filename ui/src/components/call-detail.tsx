@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Explain, SourceBadge } from "@/components/explain"
 import { Code, OutlinePane, type OutlineItem } from "@/components/outline-pane"
 import { Transcript } from "@/components/transcript"
+import { UsagePane } from "@/components/usage-pane"
 import { Badge } from "@/components/ui/badge"
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -41,11 +42,13 @@ export function CallDetail({
   call,
   prev,
   session,
+  file,
   onSelectSeq,
 }: {
   call: WireRecord
   prev: WireRecord | null
   session: CallSummary[]
+  file: string
   onSelectSeq?: (seq: number) => void
 }) {
   const req = call.request
@@ -188,6 +191,7 @@ export function CallDetail({
         <TabsList className="mx-4 mt-3 shrink-0">
           <TabsTrigger value="chat">Conversation</TabsTrigger>
           <TabsTrigger value="context">Context</TabsTrigger>
+          <TabsTrigger value="usage">Usage</TabsTrigger>
           <span className="bg-border mx-1.5 h-4 w-px shrink-0" />
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="system">System</TabsTrigger>
@@ -233,6 +237,16 @@ export function CallDetail({
           </PaneHeader>
           <ScrollArea className="min-h-0 flex-1">
             <ContextPane call={call} view={view} session={session} onSelectSeq={onSelectSeq} />
+          </ScrollArea>
+        </TabsContent>
+
+        <TabsContent value="usage" className="mt-3 flex min-h-0 flex-1 flex-col">
+          <PaneHeader derived>
+            What this session invoked — skills, MCP tools, built-ins — across every call,
+            deduplicated, with the turns that used them. Click a turn to open it.
+          </PaneHeader>
+          <ScrollArea className="min-h-0 flex-1">
+            <UsagePane file={file} currentSeq={call.seq} onSelectSeq={onSelectSeq} />
           </ScrollArea>
         </TabsContent>
 

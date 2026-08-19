@@ -505,6 +505,7 @@ export function App() {
               call={detail.call}
               prev={detail.comparable}
               session={calls}
+              file={session ?? ""}
               onSelectSeq={(n) => {
                 setSeq(n)
                 setFollow(latestConv(calls)?.seq === n)
