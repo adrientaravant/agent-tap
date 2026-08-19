@@ -225,7 +225,7 @@ export function cacheBreakpoints(req: WireRecord["request"]): Breakpoint[] {
 
 // The server decides which job a call is doing, so the rule lives in one
 // place. This maps its answer to words for the reader.
-export type KindKey = "session" | "title" | "state" | "summary" | "other"
+export type KindKey = "session" | "title" | "state" | "summary" | "monitor" | "other"
 
 const KINDS: Record<KindKey, { label: string; why: string }> = {
   session: {
@@ -243,6 +243,10 @@ const KINDS: Record<KindKey, { label: string; why: string }> = {
   summary: {
     label: "summariser",
     why: "A background call that compacts the conversation. No tools, small budget.",
+  },
+  monitor: {
+    label: "security monitor",
+    why: "A background call that watches the agent's actions for risky commands. It reads the conversation but is not part of it.",
   },
   other: {
     label: "background call",
@@ -377,6 +381,7 @@ const NOTE_PREFIXES = [
   "<permissions",
   "# AGENTS.md instructions",
   "# Files mentioned by the user",
+  "# Claude in Chrome",
 ]
 
 function roleKind(role: string, text: string): TranscriptItem["kind"] {

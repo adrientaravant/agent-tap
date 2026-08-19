@@ -12,6 +12,7 @@ import os from 'node:os'
 import crypto from 'node:crypto'
 import tls from 'node:tls'
 import { execFileSync } from 'node:child_process'
+import readline from 'node:readline'
 import { fileURLToPath } from 'node:url'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -549,18 +550,26 @@ function safeName(name) {
   return /^[\w.\-]+\.ndjson$/.test(name) ? name : null
 }
 
+// Line by line on purpose: a long session file can pass 512 MB, which is
+// more than a single V8 string may hold — readFile('utf8') throws there
+// and the session would read as empty.
 async function readSession(name) {
-  const raw = await fsp.readFile(path.join(DATA_DIR, name), 'utf8')
-  return raw
-    .split('\n')
-    .filter(Boolean)
-    .map((line, i) => {
-      try {
-        return JSON.parse(line)
-      } catch {
-        return { id: `bad-${i}`, seq: i, broken: true }
-      }
-    })
+  const out = []
+  const rl = readline.createInterface({
+    input: fs.createReadStream(path.join(DATA_DIR, name), 'utf8'),
+    crlfDelay: Infinity,
+  })
+  let i = 0
+  for await (const line of rl) {
+    if (!line) continue
+    try {
+      out.push(JSON.parse(line))
+    } catch {
+      out.push({ id: `bad-${i}`, seq: i, broken: true })
+    }
+    i++
+  }
+  return out
 }
 
 // One prompt produces several API calls and only one is the conversation.
@@ -714,7 +723,8 @@ function kindOf(rec) {
   const s = rec.request?.system
   const sys = typeof s === 'string' ? s : (s || []).map((b) => b?.text || '').join('\n')
   const tools = rec.request?.tools?.length ?? 0
-  if (/Generate a concise, sentence-case title/i.test(sys)) return 'title'
+  if (/Generate a concise, sentence-case title|naming a coding session/i.test(sys)) return 'title'
+  if (/security monitor/i.test(sys)) return 'monitor'
   if (/kicked off a Claude Code agent|decide which of four states/i.test(sys)) return 'state'
   if (/summar/i.test(sys) && tools === 0) return 'summary'
   if (tools > 20) return 'session'
@@ -736,6 +746,7 @@ const HARNESS_PREFIXES = [
   '<permissions',
   '# AGENTS.md instructions',
   '# Files mentioned by the user',
+  '# Claude in Chrome',
 ]
 
 // The title the client generated for the thread. Claude replies with plain
