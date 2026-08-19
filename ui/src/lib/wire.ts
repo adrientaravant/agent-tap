@@ -144,7 +144,9 @@ export type SessionInfo = {
 export function toolLabel(name: string, input: string) {
   if (!/^(exec|shell|bash|run)/i.test(name)) return name
   const m =
-    /cmd:\s*"((?:[^"\\]|\\.)*)"/.exec(input) ?? /"command"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(input)
+    /cmd:\s*"((?:[^"\\]|\\.)*)"/.exec(input) ??
+    /"cmd"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(input) ??
+    /"command"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(input)
   if (!m) return name
   const cmd = m[1].replace(/\\n/g, " ").replace(/\\"/g, '"').replace(/\s+/g, " ").trim()
   return cmd ? `${name} · ${cmd.slice(0, 48)}` : name

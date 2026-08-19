@@ -498,7 +498,15 @@ export function App() {
 
         <ResizablePanel defaultSize="60" minSize="30">
           {detail ? (
-            <CallDetail call={detail.call} prev={detail.comparable} session={calls} />
+            <CallDetail
+              call={detail.call}
+              prev={detail.comparable}
+              session={calls}
+              onSelectSeq={(n) => {
+                setSeq(n)
+                setFollow(latestConv(calls)?.seq === n)
+              }}
+            />
           ) : (
             <Empty className="h-full">
               <EmptyHeader>

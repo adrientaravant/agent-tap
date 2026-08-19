@@ -315,11 +315,17 @@ function makeResponsesTap() {
       case 'response.output_item.done': {
         const item = ev.item
         if (item?.type === 'function_call' || item?.type === 'custom_tool_call') {
+          // A custom tool call carries `input` (a plain string); a function
+          // call carries JSON in `arguments`.
           let input = null
-          try {
-            input = item.arguments ? JSON.parse(item.arguments) : {}
-          } catch {
-            input = { _unparsed: item.arguments }
+          if (item.input != null) {
+            input = item.input
+          } else {
+            try {
+              input = item.arguments ? JSON.parse(item.arguments) : {}
+            } catch {
+              input = { _unparsed: item.arguments }
+            }
           }
           state.tool_calls.push({ name: item.name, id: item.call_id ?? item.id, input })
         }
@@ -796,6 +802,21 @@ const normPrompt = (s, cap = 120) =>
     .toLowerCase()
     .slice(0, cap)
 
+// Codex names every shell run "exec"; pull the command into the label so a
+// list of calls says what each one ran.
+function toolCallLabel(t) {
+  const name = t?.name || 'tool'
+  if (!/^(exec|shell|bash|run)/i.test(name)) return name
+  const s = typeof t.input === 'string' ? t.input : JSON.stringify(t.input ?? '')
+  const m =
+    /cmd:\s*"((?:[^"\\]|\\.)*)"/.exec(s) ??
+    /"cmd"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(s) ??
+    /"command"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(s)
+  if (!m) return name
+  const cmd = m[1].replace(/\\n/g, ' ').replace(/\\"/g, '"').replace(/\s+/g, ' ').trim()
+  return cmd ? `${name} · ${cmd.slice(0, 40)}` : name
+}
+
 function summarise(rec) {
   const u = rec.response?.usage || {}
   const view = viewOf(rec)
@@ -819,7 +840,7 @@ function summarise(rec) {
       cache_write: u.cache_creation_input_tokens ?? null,
       cache_read: u.cache_read_input_tokens ?? null,
     },
-    tool_calls: (rec.response?.tool_calls || []).map((t) => t.name),
+    tool_calls: (rec.response?.tool_calls || []).map(toolCallLabel),
   }
 }
 

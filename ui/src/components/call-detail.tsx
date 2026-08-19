@@ -52,10 +52,12 @@ export function CallDetail({
   call,
   prev,
   session,
+  onSelectSeq,
 }: {
   call: WireRecord
   prev: WireRecord | null
   session: CallSummary[]
+  onSelectSeq?: (seq: number) => void
 }) {
   const req = call.request
   const usage = call.response?.usage ?? {}
@@ -190,7 +192,7 @@ export function CallDetail({
             reported.
           </PaneHeader>
           <ScrollArea className="min-h-0 flex-1">
-            <ContextPane call={call} view={view} session={session} />
+            <ContextPane call={call} view={view} session={session} onSelectSeq={onSelectSeq} />
           </ScrollArea>
         </TabsContent>
 
@@ -538,10 +540,12 @@ function ContextPane({
   call,
   view,
   session,
+  onSelectSeq,
 }: {
   call: WireRecord
   view: ReturnType<typeof viewOf>
   session: CallSummary[]
+  onSelectSeq?: (seq: number) => void
 }) {
   const sizes = useMemo(() => {
     const sys = view.system.reduce((n, b) => n + (b.text ?? "").length, 0)
@@ -603,14 +607,15 @@ function ContextPane({
         <p className="text-muted-foreground text-xs">
           Prompt tokens the API reported per call — new input, cache reads and cache
           writes together. The bar that keeps growing is the conversation carrying its
-          own history forward.
+          own history forward. Click a row to open that call.
         </p>
         <div className="flex flex-col gap-1">
           {session.map((c) => (
-            <div
+            <button
               key={c.id}
+              onClick={() => onSelectSeq?.(c.seq)}
               className={cn(
-                "flex items-center gap-2 rounded-sm px-1 font-mono text-[11px]",
+                "hover:bg-accent flex w-full items-center gap-2 rounded-sm px-1 text-left font-mono text-[11px]",
                 c.seq === call.seq && "bg-accent"
               )}
             >
@@ -627,7 +632,7 @@ function ContextPane({
               <span className="text-muted-foreground w-20 shrink-0 text-right">
                 out {fmtNum(c.usage.output)}
               </span>
-            </div>
+            </button>
           ))}
         </div>
       </section>
