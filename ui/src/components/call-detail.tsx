@@ -28,17 +28,6 @@ import {
   type WireRecord,
 } from "@/lib/wire"
 
-function Stat({ term, label, value }: { term: string; label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <Explain term={term} className="text-muted-foreground text-[11px] tracking-wide uppercase">
-        {label}
-      </Explain>
-      <span className="font-mono text-sm">{value}</span>
-    </div>
-  )
-}
-
 function PaneHeader({ derived, children }: { derived?: boolean; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2 border-b px-4 py-2">
@@ -61,6 +50,11 @@ export function CallDetail({
 }) {
   const req = call.request
   const usage = call.response?.usage ?? {}
+  const promptTotal =
+    (usage.input_tokens ?? 0) +
+    (usage.cache_read_input_tokens ?? 0) +
+    (usage.cache_creation_input_tokens ?? 0)
+  const promptShare = (n?: number) => (promptTotal ? ((n ?? 0) / promptTotal) * 100 : 0)
   const kind = describeKind(call)
   const codex = (call.provider ?? "anthropic") !== "anthropic"
   const breaks = cacheBreakpoints(req)
@@ -133,41 +127,66 @@ export function CallDetail({
     // h-full, not flex-1: the resizable panel wrapper is a block element, so a
     // flex hint is ignored and the pane grows to its content instead of scrolling.
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <div className="flex shrink-0 flex-col gap-3 border-b px-4 py-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-sm font-medium">{call.model}</span>
-          <Explain term="kind">
-            <Badge variant={call.kind === "session" ? "default" : "secondary"}>{kind.label}</Badge>
-          </Explain>
+      {/* The "data strip" header: one identity line, one number line. The
+          old six-stat grid moved into the strip; the kind's explanation
+          lives in the badge's hover. */}
+      <div className="flex shrink-0 items-center gap-3 border-b px-4 py-2.5">
+        <span className="text-sm font-semibold">Call #{call.seq}</span>
+        <Explain term="kind">
+          <Badge variant={call.kind === "session" ? "default" : "secondary"}>{kind.label}</Badge>
+        </Explain>
+        <span className="text-muted-foreground font-mono text-xs">{call.model}</span>
+        <span className="text-muted-foreground ml-auto flex items-center gap-2 text-xs">
           <Badge variant={call.response?.status === 200 ? "outline" : "destructive"}>
             {call.response?.status}
           </Badge>
-          <span className="text-muted-foreground font-mono text-xs">{call.url}</span>
-        </div>
-        <p className="text-muted-foreground text-xs">{kind.why}</p>
-        <div className="flex flex-wrap gap-x-8 gap-y-2">
-          <Stat term="input" label="input" value={fmtNum(usage.input_tokens)} />
-          <Stat term="cache_read" label="cache read" value={fmtNum(usage.cache_read_input_tokens)} />
-          <Stat
-            term="cache_write"
-            label="cache write"
-            value={fmtNum(usage.cache_creation_input_tokens)}
+          <Explain term="stop_reason">{call.response?.stop_reason ?? "–"}</Explain>
+          <span>·</span>
+          <Explain term="ttfb">{fmtMs(call.ttfb_ms)} ttfb</Explain>
+        </span>
+      </div>
+      <div className="flex shrink-0 items-center gap-3.5 border-b px-4 py-2 text-xs">
+        <span className="text-muted-foreground shrink-0">
+          <Explain term="input">Prompt</Explain>{" "}
+          <span className="text-foreground font-medium tabular-nums">{fmtNum(promptTotal)}</span>
+        </span>
+        <span className="bg-muted flex h-1.5 min-w-16 flex-1 overflow-hidden rounded-sm">
+          <span className="bg-primary" style={{ width: `${promptShare(usage.input_tokens)}%` }} />
+          <span
+            className="bg-primary/50"
+            style={{ width: `${promptShare(usage.cache_creation_input_tokens)}%` }}
           />
-          <Stat term="output" label="output" value={fmtNum(usage.output_tokens)} />
-          <Stat term="ttfb" label="ttfb" value={fmtMs(call.ttfb_ms)} />
-          <Stat term="stop_reason" label="stop" value={call.response?.stop_reason ?? "–"} />
-        </div>
+          <span
+            className="bg-muted-foreground/40"
+            style={{ width: `${promptShare(usage.cache_read_input_tokens)}%` }}
+          />
+        </span>
+        <span className="text-muted-foreground shrink-0">
+          <Explain term="cache_read">
+            {promptTotal ? Math.round(promptShare(usage.cache_read_input_tokens)) : 0}% cached
+          </Explain>
+        </span>
+        <span className="text-muted-foreground shrink-0">
+          <Explain term="output">out</Explain>{" "}
+          <span className="text-foreground font-medium tabular-nums">
+            {fmtNum(usage.output_tokens)}
+          </span>
+        </span>
+        <span className="text-muted-foreground shrink-0 border-l pl-3.5">
+          ran {calls.length} tools · {messages.length} messages
+        </span>
       </div>
 
       <Tabs defaultValue="chat" className="flex min-h-0 flex-1 flex-col gap-0">
         <TabsList className="mx-4 mt-3 shrink-0">
           <TabsTrigger value="chat">Conversation</TabsTrigger>
           <TabsTrigger value="context">Context</TabsTrigger>
+          <span className="bg-border mx-1.5 h-4 w-px shrink-0" />
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="system">System ({sys.length})</TabsTrigger>
-          <TabsTrigger value="tools">Tools ({tools.length})</TabsTrigger>
-          <TabsTrigger value="messages">Messages ({messages.length})</TabsTrigger>
-          <TabsTrigger value="calls">Tool calls ({calls.length})</TabsTrigger>
+          <TabsTrigger value="system">System</TabsTrigger>
+          <TabsTrigger value="tools">Tools</TabsTrigger>
+          <TabsTrigger value="messages">Messages</TabsTrigger>
+          <TabsTrigger value="calls">Tool calls</TabsTrigger>
           <TabsTrigger value="params">Params</TabsTrigger>
           <TabsTrigger value="reply">Reply</TabsTrigger>
           <TabsTrigger value="diff">Diff</TabsTrigger>
